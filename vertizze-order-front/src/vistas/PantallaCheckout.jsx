@@ -12,10 +12,7 @@ import {
   UtensilsCrossed, 
   ShoppingBag,
   Send,
-  Phone,
-  User,
-  MapPin,
-  FileText
+  User
 } from 'lucide-react';
 
 export default function PantallaCheckout({ 
@@ -68,9 +65,9 @@ export default function PantallaCheckout({
   return (
     <div className="min-h-screen bg-neutral-950 text-white flex flex-col justify-between select-none">
       
-      {/* ================================================================== */}
-      {/* 1. HEADER SUPERIOR                                                 */}
-      {/* ================================================================== */}
+      {/* =================================================================*
+       * 1. HEADER SUPERIOR                                                *
+       * ================================================================= */}
       <header className="sticky top-0 z-30 bg-neutral-950/90 backdrop-blur-md border-b border-neutral-900 px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <button 
@@ -103,9 +100,9 @@ export default function PantallaCheckout({
         </div>
       </header>
 
-      {/* ================================================================== */}
-      {/* 2. FORMULARIO Y RESUMEN                                            */}
-      {/* ================================================================== */}
+      {/* =================================================================*
+       * 2. FORMULARIO Y RESUMEN                                           *
+       * ================================================================= */}
       <main className="max-w-4xl w-full mx-auto px-6 py-8 flex-1">
         <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
@@ -122,11 +119,7 @@ export default function PantallaCheckout({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-neutral-400 mb-1.5 uppercase tracking-wider">
-<<<<<<< HEAD
                     Tu Nombre *
-=======
-                    Tu Nombre o Alias *
->>>>>>> 3557b80e71b4bf0cdebca5e7b7ae1c41e8aa9b6d
                   </label>
                   <input 
                     type="text" 

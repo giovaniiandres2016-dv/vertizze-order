@@ -1,5 +1,5 @@
 // ============================================================================
-// ARCHIVO: src/App.jsx (Limpio y Corregido sin conflictos)
+// ARCHIVO: src/App.jsx (Actualizado con acceso a Pantalla de Cocina)
 // ============================================================================
 
 import React, { useState } from 'react';
@@ -8,6 +8,7 @@ import PantallaMenu from './vistas/PantallaMenu';
 import PantallaCarrito from './vistas/PantallaCarrito';
 import PantallaCheckout from './vistas/PantallaCheckout';
 import PantallaExito from './vistas/PantallaExito';
+import PantallaCocina from './vistas/PantallaCocina'; // <-- Importamos la pantalla de cocina
 import { crearOrden } from './sdk/vertizzeApi';
 
 export default function App() {
@@ -66,7 +67,23 @@ export default function App() {
   };
 
   return (
-    <div>
+    <div className="relative min-h-screen bg-neutral-950">
+      
+      {/* Botón flotante temporal para alternar entre Cliente y Cocina (KDS) */}
+      <div className="fixed top-4 right-4 z-50">
+        <button
+          onClick={() => setPantallaActual(pantallaActual === 'cocina' ? 'inicio' : 'cocina')}
+          className="bg-amber-500 hover:bg-amber-400 text-neutral-950 px-4 py-2 rounded-xl font-black text-xs shadow-lg transition-all cursor-pointer flex items-center gap-2 border border-amber-400"
+        >
+          <span>{pantallaActual === 'cocina' ? '🍔 Ir al Sistema de Clientes' : '🍳 Abrir Módulo de Cocina (KDS)'}</span>
+        </button>
+      </div>
+
+      {/* Pantalla especial: Cocina / KDS */}
+      {pantallaActual === 'cocina' && (
+        <PantallaCocina />
+      )}
+
       {/* Pantalla 1: Inicio */}
       {pantallaActual === 'inicio' && (
         <PantallaInicio alSeleccionarModo={manejarSeleccionModo} />
