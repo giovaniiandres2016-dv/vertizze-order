@@ -1,25 +1,52 @@
 // ============================================================================
-// ARCHIVO: src/App.jsx (Actualizado con acceso a Pantalla de Cocina)
+// ARCHIVO: src/App.jsx (Enrutamiento por URL nativo para producción)
 // ============================================================================
 
-import React, { useState } from 'react';
-import PantallaInicio from './vistas/PantallaInicio';
-import PantallaMenu from './vistas/PantallaMenu';
-import PantallaCarrito from './vistas/PantallaCarrito';
-import PantallaCheckout from './vistas/PantallaCheckout';
-import PantallaExito from './vistas/PantallaExito';
-import PantallaCocina from './vistas/PantallaCocina'; // <-- Importamos la pantalla de cocina
+import React, { useState, useEffect } from 'react';
+
+// Vistas del Administrador y Personal (Privadas)
+import Login from './vistas/admin/Login';
+import DashboardGeneral from './vistas/admin/DashboardGeneral';
+import PantallaAdminOrdenes from './vistas/admin/PantallaAdminOrdenes';
+import PantallaCocina from './vistas/admin/PantallaCocina';
+
+// Vistas del Cliente (Públicas)
+import PantallaInicio from './vistas/cliente/PantallaInicio';
+import PantallaMenu from './vistas/cliente/PantallaMenu';
+import PantallaCarrito from './vistas/cliente/PantallaCarrito';
+import PantallaCheckout from './vistas/cliente/PantallaCheckout';
+import PantallaExito from './vistas/cliente/PantallaExito';
+
 import { crearOrden } from './sdk/vertizzeApi';
 
 export default function App() {
-  const [pantallaActual, setPantallaActual] = useState('inicio');
+  const [rutaActual, setRutaActual] = useState(window.location.pathname);
+  
+  // Control de vistas del flujo del cliente
   const [modoPedido, setModoPedido] = useState(null);
+  const [pasoCliente, setPasoCliente] = useState('inicio'); // 'inicio', 'menu', 'carrito', 'checkout', 'exito'
   const [carrito, setCarrito] = useState([]);
   const [datosUltimaOrden, setDatosUltimaOrden] = useState(null);
 
-  const manejarSeleccionModo = (modo) => {
-    setModoPedido(modo);
-    setPantallaActual('menu');
+  // Control de autenticación para administración
+  const [rolActual, setRolActual] = useState(null); // null o 'admin'
+
+  useEffect(() => {
+    // Sintonizar cambios en la URL
+    const manejarCambioRuta = () => setRutaActual(window.location.pathname);
+    window.addEventListener('popstate', manejarCambioRuta);
+
+    const sesionAdmin = localStorage.getItem('sesion_admin');
+    if (sesionAdmin) {
+      setRolActual('admin');
+    }
+
+    return () => window.removeEventListener('popstate', manejarCambioRuta);
+  }, []);
+
+  const cerrarSesionAdmin = () => {
+    localStorage.removeItem('sesion_admin');
+    setRolActual(null);
   };
 
   const manejarAgregarAlCarrito = (producto) => {
@@ -59,103 +86,145 @@ export default function App() {
     setCarrito(carritoActual => carritoActual.filter(item => item.id !== idProducto));
   };
 
-  const manejarVolverInicio = () => {
+  const manejarVolverInicioCliente = () => {
     setDatosUltimaOrden(null);
     setCarrito([]);
     setModoPedido(null);
-    setPantallaActual('inicio');
+    setPasoCliente('inicio');
   };
 
-  return (
-    <div className="relative min-h-screen bg-neutral-950">
-      
-      {/* Botón flotante temporal para alternar entre Cliente y Cocina (KDS) */}
-      <div className="fixed top-4 right-4 z-50">
-        <button
-          onClick={() => setPantallaActual(pantallaActual === 'cocina' ? 'inicio' : 'cocina')}
-          className="bg-amber-500 hover:bg-amber-400 text-neutral-950 px-4 py-2 rounded-xl font-black text-xs shadow-lg transition-all cursor-pointer flex items-center gap-2 border border-amber-400"
-        >
-          <span>{pantallaActual === 'cocina' ? '🍔 Ir al Sistema de Clientes' : '🍳 Abrir Módulo de Cocina (KDS)'}</span>
-        </button>
-      </div>
-
-      {/* Pantalla especial: Cocina / KDS */}
-      {pantallaActual === 'cocina' && (
+  // =========================================================================
+  // RUTA 1: /cocina (Pantalla exclusiva para el KDS de cocina)
+  // =========================================================================
+  if (rutaActual.includes('/cocina')) {
+    return (
+      <div className="relative min-h-screen bg-neutral-950 text-white">
+        <div className="bg-neutral-900 border-b border-neutral-800 px-6 py-3 flex justify-between items-center text-xs">
+          <span className="text-emerald-400 font-bold flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            Modo Cocina (KDS) Activo
+          </span>
+          <span className="text-neutral-400">Pantalla fija de preparación en tiempo real</span>
+        </div>
         <PantallaCocina />
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // RUTA 2: /admin (Panel de administración general y caja)
+  // =========================================================================
+  if (rutaActual.includes('/admin')) {
+    if (!rolActual) {
+      return (
+        <Login 
+          alIniciarSesion={(rol) => {
+            setRolActual('admin');
+          }} 
+        />
+      );
+    }
+
+    return (
+      <div className="relative min-h-screen bg-neutral-950 text-white">
+        <div className="bg-neutral-900 border-b border-neutral-800 px-6 py-3 flex justify-between items-center z-50 relative">
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-black bg-amber-500/20 text-amber-400 border border-amber-500/40 px-3 py-1 rounded-xl">
+              Panel Administrador
+            </span>
+            <span className="text-xs text-neutral-400 hidden md:inline">
+              Control total del sistema y analíticas
+            </span>
+          </div>
+
+          <button 
+            onClick={cerrarSesionAdmin} 
+            className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer"
+          >
+            Cerrar Sesión
+          </button>
+        </div>
+
+        <DashboardGeneral />
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // RUTA 3: Raíz / Cliente (Kiosco de Autoservicio Fijo)
+  // =========================================================================
+  return (
+    <div className="relative min-h-screen bg-neutral-950 text-white">
+      {pasoCliente === 'inicio' && (
+        <PantallaInicio 
+          alSeleccionarModo={(modo) => {
+            setModoPedido(modo);
+            setPasoCliente('menu');
+          }}
+        />
       )}
 
-      {/* Pantalla 1: Inicio */}
-      {pantallaActual === 'inicio' && (
-        <PantallaInicio alSeleccionarModo={manejarSeleccionModo} />
-      )}
-
-      {/* Pantalla 2: Menú */}
-      {pantallaActual === 'menu' && (
+      {pasoCliente === 'menu' && (
         <PantallaMenu 
           modoPedido={modoPedido}
-          alVolverInicio={manejarVolverInicio}
-          alIrAlCarrito={() => setPantallaActual('carrito')}
+          alVolverInicio={manejarVolverInicioCliente}
+          alIrAlCarrito={() => setPasoCliente('carrito')}
           carrito={carrito}
           alAgregarAlCarrito={manejarAgregarAlCarrito}
         />
       )}
 
-      {/* Pantalla 3: Carrito */}
-      {pantallaActual === 'carrito' && (
+      {pasoCliente === 'carrito' && (
         <PantallaCarrito 
           carrito={carrito}
           modoPedido={modoPedido}
-          alVolverAlMenu={() => setPantallaActual('menu')}
+          alVolverAlMenu={() => setPasoCliente('menu')}
           alActualizarCantidad={manejarActualizarCantidad}
           alActualizarObservacion={manejarActualizarObservacionItem}
           alEliminarItem={manejarEliminarItem}
-          alIrAlCheckout={() => setPantallaActual('checkout')}  
+          alIrAlCheckout={() => setPasoCliente('checkout')}  
         />
       )}
 
-      {/* Pantalla 4: Checkout */}
-      {pantallaActual === 'checkout' && (
+      {pasoCliente === 'checkout' && (
         <PantallaCheckout 
           carrito={carrito}
           modoPedido={modoPedido}
-          alVolverAlCarrito={() => setPantallaActual('carrito')}
+          alVolverAlCarrito={() => setPasoCliente('carrito')}
           alConfirmarPedido={async (datosOrden) => {
             try {
               const ordenParaGuardar = {
                 numero_orden: Math.floor(1000 + Math.random() * 9000),
-                cliente_nombre: datosOrden.cliente,
+                cliente_nombre: datosOrden.cliente_nombre,
                 telefono: datosOrden.telefono,
-                ubicacion_detalle: datosOrden.ubicacionDetalle,
-                tipo_servicio: datosOrden.modo || modoPedido,
-                metodo_pago: datosOrden.metodo_pago || datosOrden.metodopago || datosOrden.metodoPago || 'Efectivo',
+                ubicacion_detalle: datosOrden.ubicacion_detalle,
+                tipo_servicio: datosOrden.tipo_servicio,
+                metodo_pago: datosOrden.metodo_pago,
                 observaciones: datosOrden.observaciones,
-                items: datosOrden.productos,
-                subtotal: datosOrden.total,
+                items: datosOrden.items,
+                subtotal: datosOrden.subtotal,
+                domicilio: datosOrden.domicilio,
                 total: datosOrden.total,
-                estado: 'pendiente',
-                creado_en: new Date().toISOString()
+                estado: 'Pendiente'
               };
 
               const ordenRegistrada = await crearOrden(ordenParaGuardar);
-              console.log("Orden guardada en Supabase con éxito:", ordenRegistrada);
-
-              const ordenFinal = ordenRegistrada && ordenRegistrada[0] ? ordenRegistrada[0] : { ...ordenParaGuardar, productos: datosOrden.productos };
+              const ordenFinal = ordenRegistrada && ordenRegistrada[0] ? ordenRegistrada[0] : { ...ordenParaGuardar };
               setDatosUltimaOrden(ordenFinal);
               setCarrito([]);
-              setPantallaActual('exito');
+              setPasoCliente('exito');
             } catch (error) {
-              console.error("Error al guardar la orden en Supabase:", error);
-              alert("Hubo un error al registrar tu pedido en la base de datos.");
+              console.error("Error al guardar la orden:", error);
+              alert("Hubo un error al registrar tu pedido.");
             }
           }}
         />
       )}
 
-      {/* Pantalla 5: Éxito y Cola de Espera */}
-      {pantallaActual === 'exito' && (
+      {pasoCliente === 'exito' && (
         <PantallaExito 
           datosOrden={datosUltimaOrden}
-          alVolverInicio={manejarVolverInicio}
+          alVolverInicio={manejarVolverInicioCliente}
         />
       )}
     </div>

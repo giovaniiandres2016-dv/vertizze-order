@@ -1,18 +1,25 @@
 // ============================================================================
 // ARCHIVO: src/vistas/PantallaCocina.jsx
-// DESCRIPCIÓN: KDS con tiempo real, alerta sonora automática y número de mesa.
+// DESCRIPCIÓN: KDS optimizado con control de estados y cronómetro interactivo.
 // ============================================================================
 
 import React, { useEffect, useState, useRef } from 'react';
-import { Clock, CheckCircle2, Flame, ChefHat, Bell, UtensilsCrossed } from 'lucide-react';
-import { supabase } from '../sdk/supabaseClient';
+import { Clock, CheckCircle2, Flame, ChefHat, Bell, UtensilsCrossed, Bike, Store } from 'lucide-react';
+import { supabase } from '../../sdk/supabaseClient';
 
 export default function PantallaCocina() {
   const [ordenes, setOrdenes] = useState([]);
   const [cargando, setCargando] = useState(true);
+  const [, setForzarRender] = useState(0);
   const totalOrdenesAnterior = useRef(0);
 
-  // Función para reproducir un tono de alerta elegante usando Web Audio API
+  useEffect(() => {
+    const intervalo = setInterval(() => {
+      setForzarRender((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(intervalo);
+  }, []);
+
   const reproducirAlertaSonora = () => {
     try {
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -20,8 +27,8 @@ export default function PantallaCocina() {
       const gain = audioCtx.createGain();
 
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // Nota D5
-      osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.15); // Sube a A5
+      osc.frequency.setValueAtTime(587.33, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.15);
 
       gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
@@ -32,7 +39,7 @@ export default function PantallaCocina() {
       osc.start();
       osc.stop(audioCtx.currentTime + 0.5);
     } catch (e) {
-      console.log('Audio no soportado o bloqueado por el navegador:', e);
+      console.log('Audio no soportado o bloqueado:', e);
     }
   };
 
@@ -40,15 +47,12 @@ export default function PantallaCocina() {
     obtenerOrdenes();
 
     const channelName = `ordenes-cocina-realtime-${Date.now()}`;
-    
     const channel = supabase
       .channel(channelName)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'ordenes' },
         (payload) => {
-          console.log('Cambio detectado en tiempo real:', payload);
-          // Si entra una orden nueva, reproducimos sonido
           if (payload.eventType === 'INSERT') {
             reproducirAlertaSonora();
           }
@@ -73,8 +77,6 @@ export default function PantallaCocina() {
       if (error) throw error;
       
       const nuevasOrdenes = data || [];
-      
-      // Si la cantidad de órdenes pendientes aumenta respecto al estado previo, suena alerta
       if (nuevasOrdenes.length > totalOrdenesAnterior.current && totalOrdenesAnterior.current !== 0) {
         reproducirAlertaSonora();
       }
@@ -82,24 +84,99 @@ export default function PantallaCocina() {
 
       setOrdenes(nuevasOrdenes);
     } catch (error) {
-      console.error('Error al obtener órdenes para cocina:', error);
+      console.error('Error al obtener órdenes:', error);
     } finally {
       setCargando(false);
     }
   };
 
-  const cambiarEstado = async (idOrden, nuevoEstado) => {
-    try {
-      const { error } = await supabase
-        .from('ordenes')
-        .update({ estado: nuevoEstado })
-        .eq('id', idOrden);
+  const manejarAccionTarjeta = async (orden) => {
+    const estadoActual = (orden.estado || 'Pendiente').toLowerCase().trim();
+    let nuevoEstado = '';
+    let datosActualizacion = {};
 
-      if (error) throw error;
-      obtenerOrdenes();
-    } catch (error) {
-      console.error('Error al actualizar estado:', error);
+    const ahora = new Date().toISOString();
+
+    // Normalizamos las comparaciones de estados para evitar desajustes
+    if (estadoActual === 'pendiente' || estadoActual === 'Pendiente') {
+      nuevoEstado = 'en_proceso';
+      datosActualizacion = {
+        estado: nuevoEstado,
+        tiempo_inicio: ahora
+      };
+    } else if (estadoActual === 'en_proceso') {
+      nuevoEstado = 'listo';
+      
+      let duracionTexto = "0 min";
+      if (orden.tiempo_inicio) {
+        const inicio = new Date(orden.tiempo_inicio).getTime();
+        const fin = new Date(ahora).getTime();
+        const diffSegundos = Math.floor((fin - inicio) / 1000);
+        
+        const mins = Math.floor(diffSegundos / 60);
+        const segs = diffSegundos % 60;
+
+        if (mins > 0) {
+          duracionTexto = `${mins} min ${segs} seg`;
+        } else {
+          duracionTexto = `${segs} seg`;
+        }
+      }
+
+      datosActualizacion = {
+        estado: nuevoEstado,
+        tiempo_fin: ahora,
+        duracion_preparacion: duracionTexto
+      };
+    } else if (estadoActual === 'listo') {
+      nuevoEstado = 'entregado';
+      datosActualizacion = {
+        estado: nuevoEstado
+      };
     }
+
+    if (nuevoEstado) {
+      try {
+        const { error } = await supabase
+          .from('ordenes')
+          .update(datosActualizacion)
+          .eq('id', orden.id);
+
+        if (error) throw error;
+        await obtenerOrdenes();
+      } catch (error) {
+        console.error('Error al actualizar estado:', error);
+      }
+    }
+  };
+
+  const CronometroActivo = ({ tiempoInicio }) => {
+    const [segundosTranscurridos, setSegundosTranscurridos] = useState(0);
+
+    useEffect(() => {
+      if (!tiempoInicio) return;
+      const calcularTiempo = () => {
+        const inicio = new Date(tiempoInicio).getTime();
+        const ahora = new Date().getTime();
+        const diff = Math.floor((ahora - inicio) / 1000);
+        setSegundosTranscurridos(diff > 0 ? diff : 0);
+      };
+
+      calcularTiempo();
+      const timer = setInterval(calcularTiempo, 1000);
+      return () => clearInterval(timer);
+    }, [tiempoInicio]);
+
+    const minutos = Math.floor(segundosTranscurridos / 60);
+    const segundos = segundosTranscurridos % 60;
+    const formatoTiempo = minutos > 0 ? `${minutos} min ${segundos} seg` : `${segundos} seg`;
+
+    return (
+      <div className="flex items-center gap-1.5 bg-black/60 border border-amber-500/40 px-2.5 py-1 rounded-lg text-amber-300 font-mono text-xs font-bold">
+        <Clock className="w-3.5 h-3.5 animate-spin" style={{ animationDuration: '4s' }} />
+        <span>⏱️ {formatoTiempo}</span>
+      </div>
+    );
   };
 
   const renderizarArticulos = (itemsRaw) => {
@@ -153,12 +230,11 @@ export default function PantallaCocina() {
           </div>
           <div>
             <h1 className="text-lg md:text-xl font-black tracking-tight text-white">KDS - Módulo de Cocina</h1>
-            <p className="text-xs text-neutral-400">Cola de preparación de pedidos en tiempo real</p>
+            <p className="text-xs text-neutral-400">Toca cualquier tarjeta para avanzar su estado</p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Botón para activar/probar el sonido manualmente si el navegador lo requiere */}
           <button 
             onClick={reproducirAlertaSonora}
             title="Probar sonido de alerta"
@@ -187,24 +263,33 @@ export default function PantallaCocina() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {ordenes.map((orden) => {
-            const estadoActual = orden.estado || 'pendiente';
+            const estadoActual = (orden.estado || 'pendiente').toLowerCase().trim();
             const numeroMesa = orden.mesa || orden.numero_mesa || orden.mesa_id;
+            const tipoServicioRaw = (orden.tipo_servicio || '').toLowerCase();
+            const esDomicilio = tipoServicioRaw.includes('domicilio') || tipoServicioRaw.includes('delivery');
 
-            let estilosTarjeta = "border-neutral-800 bg-neutral-900 text-neutral-100";
+            let estilosTarjeta = "border-neutral-800 bg-neutral-900 text-neutral-100 hover:border-neutral-600";
             let franjaColor = "bg-neutral-700";
+            let textoBotonAccion = "Iniciar Preparación";
+            let estiloBotonAccion = "bg-neutral-800 hover:bg-neutral-700 text-white border border-white/20";
 
             if (estadoActual === 'en_proceso') {
-              estilosTarjeta = "border-amber-500 bg-amber-950/95 text-amber-50 shadow-xl shadow-amber-950/40";
+              estilosTarjeta = "border-amber-500 bg-amber-950/95 text-amber-50 shadow-xl shadow-amber-950/40 hover:border-amber-400";
               franjaColor = "bg-amber-400";
+              textoBotonAccion = "Marcar como Listo";
+              estiloBotonAccion = "bg-amber-500 hover:bg-amber-400 text-neutral-950 font-black shadow-lg";
             } else if (estadoActual === 'listo') {
-              estilosTarjeta = "border-emerald-500 bg-emerald-950/95 text-emerald-50 shadow-xl shadow-emerald-950/40";
+              estilosTarjeta = "border-emerald-500 bg-emerald-950/95 text-emerald-50 shadow-xl shadow-emerald-950/40 hover:border-emerald-400";
               franjaColor = "bg-emerald-400";
+              textoBotonAccion = "Entregar";
+              estiloBotonAccion = "bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-black shadow-lg";
             }
 
             return (
               <div 
                 key={orden.id} 
-                className={`border-2 rounded-2xl p-4 flex flex-col justify-between transition-all relative overflow-hidden ${estilosTarjeta}`}
+                onClick={() => manejarAccionTarjeta(orden)}
+                className={`border-2 rounded-2xl p-4 flex flex-col justify-between transition-all relative overflow-hidden cursor-pointer active:scale-[0.98] ${estilosTarjeta}`}
               >
                 <div className={`absolute top-0 inset-x-0 h-1.5 ${franjaColor}`}></div>
 
@@ -215,15 +300,28 @@ export default function PantallaCocina() {
                     </span>
                     
                     <div className="flex items-center gap-1.5">
+                      {estadoActual === 'en_proceso' && orden.tiempo_inicio && (
+                        <CronometroActivo tiempoInicio={orden.tiempo_inicio} />
+                      )}
+
                       {numeroMesa && (
                         <span className="text-[11px] font-black bg-amber-500 text-neutral-950 px-2.5 py-1 rounded-lg shadow-sm flex items-center gap-1">
                           <UtensilsCrossed className="w-3 h-3" />
                           Mesa {numeroMesa}
                         </span>
                       )}
-                      <span className="text-[11px] font-bold uppercase tracking-wider bg-black/50 px-2.5 py-1 rounded-lg border border-white/10 text-white">
-                        {orden.tipo_servicio || 'General'}
-                      </span>
+
+                      {esDomicilio ? (
+                        <span className="text-[11px] font-black bg-purple-600 text-white px-2.5 py-1 rounded-lg shadow-sm flex items-center gap-1 uppercase tracking-wider">
+                          <Bike className="w-3.5 h-3.5" />
+                          Domicilio
+                        </span>
+                      ) : (
+                        <span className="text-[11px] font-black bg-cyan-600 text-white px-2.5 py-1 rounded-lg shadow-sm flex items-center gap-1 uppercase tracking-wider">
+                          <Store className="w-3.5 h-3.5" />
+                          Consumir en Local
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -238,35 +336,11 @@ export default function PantallaCocina() {
                   </div>
                 </div>
 
-                <div className="mt-4 pt-2.5 border-t border-white/15 flex gap-2">
-                  {estadoActual === 'pendiente' && (
-                    <button
-                      onClick={() => cambiarEstado(orden.id, 'en_proceso')}
-                      className="w-full bg-amber-500 hover:bg-amber-400 text-neutral-950 py-2.5 rounded-xl font-black text-xs transition-all shadow-md cursor-pointer flex items-center justify-center gap-1.5"
-                    >
-                      <Flame className="w-4 h-4" />
-                      <span>Iniciar Preparación</span>
-                    </button>
-                  )}
-
-                  {estadoActual === 'en_proceso' && (
-                    <button
-                      onClick={() => cambiarEstado(orden.id, 'listo')}
-                      className="w-full bg-emerald-500 hover:bg-emerald-400 text-neutral-950 py-2.5 rounded-xl font-black text-xs transition-all shadow-md cursor-pointer flex items-center justify-center gap-1.5"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>Marcar como Listo</span>
-                    </button>
-                  )}
-
-                  {estadoActual === 'listo' && (
-                    <button
-                      onClick={() => cambiarEstado(orden.id, 'entregado')}
-                      className="w-full bg-neutral-900 hover:bg-black text-white py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer border border-white/20 shadow-md"
-                    >
-                      Archivar / Entregado
-                    </button>
-                  )}
+                {/* Botón de acción grande y limpio */}
+                <div className="mt-4 pt-3 border-t border-white/15">
+                  <div className={`w-full py-2.5 rounded-xl text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${estiloBotonAccion}`}>
+                    <span>{textoBotonAccion}</span>
+                  </div>
                 </div>
 
               </div>

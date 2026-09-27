@@ -1,9 +1,10 @@
 // ============================================================================
-// ARCHIVO: src/vistas/PantallaMenu.jsx (Conectado directamente a Supabase)
+// ARCHIVO: src/vistas/cliente/PantallaMenu.jsx (Corregido y Conectado a Supabase)
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
-import { obtenerMenu } from '../sdk/vertizzeApi';
+// IMPORTANTE: Ajusta esta ruta si tu carpeta sdk está en otro nivel (ej: '../../sdk/vertizzeApi')
+import { obtenerMenu } from '../../sdk/vertizzeApi'; 
 import { 
   UtensilsCrossed, 
   ShoppingBag, 
@@ -136,7 +137,6 @@ export default function PantallaMenu({ modoPedido, alVolverInicio, alIrAlCarrito
       {/* CUERPO PRINCIPAL */}
       <main className="max-w-6xl w-full mx-auto px-6 py-6 flex-1 space-y-6">
         
-        {/* Cabecera de sección y buscador */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h2 className="text-2xl font-extrabold tracking-tight">Nuestro Menú</h2>
@@ -236,7 +236,7 @@ export default function PantallaMenu({ modoPedido, alVolverInicio, alIrAlCarrito
 
       {/* FOOTER FLOTANTE */}
       {cantidadTotalItems > 0 && (
-        <div className="fixed bottom-0 inset-x-0 z-40 p-4 bg-neutral-950/95 backdrop-blur-xl border-t border-neutral-800 shadow-2xl animate-fade-in">
+        <div className="fixed bottom-0 inset-x-0 z-40 p-4 bg-neutral-950/95 backdrop-blur-xl border-t border-neutral-800 shadow-2xl">
           <div className="max-w-6xl mx-auto flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 bg-amber-500 text-neutral-950 rounded-2xl flex items-center justify-center font-black text-lg shadow-lg shadow-amber-500/20">

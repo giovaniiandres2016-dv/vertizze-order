@@ -1,6 +1,6 @@
 // ============================================================================
 // ARCHIVO: src/vistas/PantallaCheckout.jsx
-// DESCRIPCIÓN: Pantalla final de pago y confirmación de la orden actualizada.
+// DESCRIPCIÓN: Pantalla final de pago y confirmación de la orden corregida.
 // ============================================================================
 
 import React, { useState } from 'react';
@@ -44,19 +44,22 @@ export default function PantallaCheckout({
   const handleSubmit = (e) => {
     e.preventDefault();
     
-    // Empaquetamos todos los datos actualizados de la orden
+    // Determinamos el texto exacto para tipo_servicio según el modo activo
+    const tipoServicioTexto = modoPedido === 'para_servir' ? 'Para Servir en Local' : 'Domicilio';
+
+    // Empaquetamos todos los datos con los nombres exactos de las columnas de Supabase
     const datosOrden = {
-      cliente: nombreCliente,
+      cliente_nombre: nombreCliente, // <-- Coincide exactamente con la columna de Supabase
       telefono: telefonoCliente,
-      ubicacionDetalle: detalleMesaObarrio || (modoPedido === 'para_servir' ? 'Sin mesa asignada / Barra' : 'Domicilio general'),
-      metodoPago,
+      ubicacion_detalle: detalleMesaObarrio || (modoPedido === 'para_servir' ? 'Sin mesa asignada / Barra' : 'Domicilio general'),
+      metodo_pago: metodoPago,
       observaciones,
-      productos: carrito,
+      items: JSON.stringify(carrito),
       subtotal,
       domicilio: costoDomicilio,
       total: totalFinal,
-      modo: modoPedido,
-      fecha: new Date().toISOString()
+      tipo_servicio: tipoServicioTexto, // <-- Coincide exactamente con la columna de Supabase
+      estado: 'Pendiente'
     };
 
     alConfirmarPedido(datosOrden);
@@ -71,6 +74,7 @@ export default function PantallaCheckout({
       <header className="sticky top-0 z-30 bg-neutral-950/90 backdrop-blur-md border-b border-neutral-900 px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <button 
+            type="button"
             onClick={alVolverAlCarrito}
             className="flex items-center gap-2 text-neutral-400 hover:text-amber-400 bg-neutral-900 hover:bg-neutral-800 px-4 py-2 rounded-xl border border-neutral-800 transition-all cursor-pointer"
           >

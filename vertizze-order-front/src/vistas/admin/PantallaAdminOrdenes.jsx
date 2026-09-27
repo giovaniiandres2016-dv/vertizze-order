@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
-import { suscribirseAOrdenes, supabase } from '../sdk/vertizzeApi';
+import { suscribirseAOrdenes, supabase } from '../../sdk/vertizzeApi';
 import { Bell, Clock, ArrowLeft, ShoppingBag, UtensilsCrossed } from 'lucide-react';
 
 export default function PantallaAdminOrdenes({ alVolverInicio }) {
