@@ -1,6 +1,6 @@
 // ============================================================================
-// ARCHIVO: src/vistas/PantallaCheckout.jsx
-// DESCRIPCIÓN: Pantalla final de pago y confirmación de la orden corregida.
+// ARCHIVO: src/vistas/cliente/PantallaCheckout.jsx
+// DESCRIPCIÓN: Pantalla final de pago ajustada para las 3 modalidades.
 // ============================================================================
 
 import React, { useState } from 'react';
@@ -11,6 +11,7 @@ import {
   Smartphone, 
   UtensilsCrossed, 
   ShoppingBag,
+  Truck,
   Send,
   User
 } from 'lucide-react';
@@ -21,44 +22,41 @@ export default function PantallaCheckout({
   alVolverAlCarrito, 
   alConfirmarPedido 
 }) {
-  // Estados para capturar la información del formulario
   const [nombreCliente, setNombreCliente] = useState('');
   const [telefonoCliente, setTelefonoCliente] = useState('');
   const [detalleMesaObarrio, setDetalleMesaObarrio] = useState('');
   const [observaciones, setObservaciones] = useState('');
   const [metodoPago, setMetodoPago] = useState('efectivo');
 
-  // Parametrización del costo de domicilio (Base: $6.000 para llevar, $0 para servir)
-  const costoDomicilio = modoPedido === 'para_llevar' ? 6000 : 0;
+  // El costo de domicilio es $6.000 únicamente si modoPedido es 'domicilio', de lo contrario $0
+  const costoDomicilio = modoPedido === 'domicilio' ? 6000 : 0;
 
-  // Cálculos de totales
   const subtotal = carrito.reduce((acc, item) => acc + (item.precio * item.cantidad), 0);
   const totalFinal = subtotal + costoDomicilio;
 
-  // Función para formatear los precios en pesos colombianos
   const formatearPrecio = (valor) => {
-    return `$ ${valor.toLocaleString('es-CO')}`;
+    return `$ ${(valor || 0).toLocaleString('es-CO')}`;
   };
 
-  // Manejador al enviar el formulario final
   const handleSubmit = (e) => {
     e.preventDefault();
     
-    // Determinamos el texto exacto para tipo_servicio según el modo activo
-    const tipoServicioTexto = modoPedido === 'para_servir' ? 'Para Servir en Local' : 'Domicilio';
+    // Mapeo exacto del tipo de servicio para la base de datos y validadores
+    let tipoServicioTexto = 'Para Servir';
+    if (modoPedido === 'para_recoger') tipoServicioTexto = 'Para Recoger';
+    if (modoPedido === 'domicilio') tipoServicioTexto = 'Domicilio';
 
-    // Empaquetamos todos los datos con los nombres exactos de las columnas de Supabase
     const datosOrden = {
-      cliente_nombre: nombreCliente, // <-- Coincide exactamente con la columna de Supabase
+      cliente_nombre: nombreCliente,
       telefono: telefonoCliente,
-      ubicacion_detalle: detalleMesaObarrio || (modoPedido === 'para_servir' ? 'Sin mesa asignada / Barra' : 'Domicilio general'),
+      ubicacion_detalle: detalleMesaObarrio || (modoPedido === 'para_servir' ? 'Barra / Sin mesa' : 'Recoge en local'),
       metodo_pago: metodoPago,
       observaciones,
       items: JSON.stringify(carrito),
       subtotal,
       domicilio: costoDomicilio,
       total: totalFinal,
-      tipo_servicio: tipoServicioTexto, // <-- Coincide exactamente con la columna de Supabase
+      tipo_servicio: tipoServicioTexto, 
       estado: 'Pendiente'
     };
 
@@ -67,10 +65,6 @@ export default function PantallaCheckout({
 
   return (
     <div className="min-h-screen bg-neutral-950 text-white flex flex-col justify-between select-none">
-      
-      {/* =================================================================*
-       * 1. HEADER SUPERIOR                                                *
-       * ================================================================= */}
       <header className="sticky top-0 z-30 bg-neutral-950/90 backdrop-blur-md border-b border-neutral-900 px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <button 
@@ -88,32 +82,18 @@ export default function PantallaCheckout({
             </h1>
           </div>
 
-          <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 px-3.5 py-1.5 rounded-xl text-amber-400 text-xs font-semibold">
-            {modoPedido === 'para_servir' ? (
-              <>
-                <UtensilsCrossed className="w-3.5 h-3.5" />
-                <span>Para Servir</span>
-              </>
-            ) : (
-              <>
-                <ShoppingBag className="w-3.5 h-3.5" />
-                <span>Para Llevar / Domi</span>
-              </>
-            )}
+          <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 px-3.5 py-1.5 rounded-xl text-amber-400 text-xs font-semibold capitalize">
+            {modoPedido === 'para_servir' && <><UtensilsCrossed className="w-3.5 h-3.5" /><span>Para Servir</span></>}
+            {modoPedido === 'para_recoger' && <><ShoppingBag className="w-3.5 h-3.5" /><span>Para Recoger</span></>}
+            {modoPedido === 'domicilio' && <><Truck className="w-3.5 h-3.5" /><span>Domicilio</span></>}
           </div>
         </div>
       </header>
 
-      {/* =================================================================*
-       * 2. FORMULARIO Y RESUMEN                                           *
-       * ================================================================= */}
       <main className="max-w-4xl w-full mx-auto px-6 py-8 flex-1">
         <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
-          {/* Columna Izquierda: Datos del cliente y Método de Pago */}
           <div className="lg:col-span-2 space-y-6">
-            
-            {/* Sección de Datos de Contacto y Ubicación */}
             <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 space-y-4 shadow-md">
               <h2 className="text-base font-extrabold text-white border-b border-neutral-800 pb-3 flex items-center gap-2">
                 <User className="w-4 h-4 text-amber-500" />
@@ -152,12 +132,12 @@ export default function PantallaCheckout({
 
               <div>
                 <label className="block text-xs font-semibold text-neutral-400 mb-1.5 uppercase tracking-wider">
-                  {modoPedido === 'para_servir' ? 'Número de Mesa (Opcional)' : 'Dirección de Entrega / Barrio *'}
+                  {modoPedido === 'domicilio' ? 'Dirección de Entrega / Barrio *' : 'Número de Mesa o Notas de Recogida'}
                 </label>
                 <input 
                   type="text" 
-                  required={modoPedido === 'para_llevar'}
-                  placeholder={modoPedido === 'para_servir' ? 'Ej. Mesa 04 (O si estás de pie, déjalo vacío)' : 'Ej. Calle 50 # 45-22, Centro'}
+                  required={modoPedido === 'domicilio'}
+                  placeholder={modoPedido === 'domicilio' ? 'Ej. Calle 50 # 45-22, Barrio...' : 'Ej. Mesa 4 (o dejar vacío si es para recoger)'}
                   value={detalleMesaObarrio}
                   onChange={(e) => setDetalleMesaObarrio(e.target.value)}
                   className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-amber-500 transition-colors"
@@ -178,7 +158,6 @@ export default function PantallaCheckout({
               </div>
             </div>
 
-            {/* Sección de Método de Pago */}
             <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 space-y-4 shadow-md">
               <h2 className="text-base font-extrabold text-white border-b border-neutral-800 pb-3">
                 2. Método de Pago
@@ -189,9 +168,7 @@ export default function PantallaCheckout({
                   type="button"
                   onClick={() => setMetodoPago('efectivo')}
                   className={`flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border transition-all cursor-pointer ${
-                    metodoPago === 'efectivo' 
-                      ? 'bg-amber-500/10 border-amber-500 text-amber-400' 
-                      : 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                    metodoPago === 'efectivo' ? 'bg-amber-500/10 border-amber-500 text-amber-400' : 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:border-neutral-700'
                   }`}
                 >
                   <Banknote className="w-6 h-6" />
@@ -202,9 +179,7 @@ export default function PantallaCheckout({
                   type="button"
                   onClick={() => setMetodoPago('transferencia')}
                   className={`flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border transition-all cursor-pointer ${
-                    metodoPago === 'transferencia' 
-                      ? 'bg-amber-500/10 border-amber-500 text-amber-400' 
-                      : 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                    metodoPago === 'transferencia' ? 'bg-amber-500/10 border-amber-500 text-amber-400' : 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:border-neutral-700'
                   }`}
                 >
                   <Smartphone className="w-6 h-6" />
@@ -215,9 +190,7 @@ export default function PantallaCheckout({
                   type="button"
                   onClick={() => setMetodoPago('tarjeta')}
                   className={`flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border transition-all cursor-pointer ${
-                    metodoPago === 'tarjeta' 
-                      ? 'bg-amber-500/10 border-amber-500 text-amber-400' 
-                      : 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                    metodoPago === 'tarjeta' ? 'bg-amber-500/10 border-amber-500 text-amber-400' : 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:border-neutral-700'
                   }`}
                 >
                   <CreditCard className="w-6 h-6" />
@@ -225,10 +198,8 @@ export default function PantallaCheckout({
                 </button>
               </div>
             </div>
-
           </div>
 
-          {/* Columna Derecha: Resumen de Totales y Botón de Confirmación */}
           <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 h-fit space-y-6 shadow-xl">
             <h3 className="text-lg font-bold border-b border-neutral-800 pb-4">
               Resumen Final
@@ -249,7 +220,7 @@ export default function PantallaCheckout({
                 <span className="text-white font-medium">{formatearPrecio(subtotal)}</span>
               </div>
               <div className="flex justify-between text-neutral-400">
-                <span>{modoPedido === 'para_llevar' ? 'Costo Domicilio' : 'Servicio en Mesa'}</span>
+                <span>{modoPedido === 'domicilio' ? 'Costo Domicilio' : 'Servicio en Local / Recogida'}</span>
                 <span className="text-white font-medium">{formatearPrecio(costoDomicilio)}</span>
               </div>
               <div className="border-t border-neutral-800 pt-3 flex justify-between text-base font-black">

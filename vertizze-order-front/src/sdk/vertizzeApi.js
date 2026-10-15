@@ -1,5 +1,5 @@
 // ============================================================================
-// ARCHIVO: src/sdk/vertizzeApi.js (Actualizado con Realtime)
+// ARCHIVO: src/sdk/vertizzeApi.js
 // ============================================================================
 
 import { createClient } from '@supabase/supabase-js'
@@ -24,13 +24,10 @@ export async function obtenerMenu() {
     .from('categorias')
     .select('*');
 
-  if (errorCat) {
-    console.error("Error al obtener categorías:", errorCat.message);
-  }
+  if (errorCat) console.error("Error al obtener categorías:", errorCat.message);
 
   return (productos || []).map(item => {
     let nombreCategoria = 'otros';
-    
     if (categorias && categorias.length > 0) {
       const catEncontrada = categorias.find(c => c.id === item.categoria_id);
       if (catEncontrada && catEncontrada.nombre) {
@@ -40,24 +37,22 @@ export async function obtenerMenu() {
         else if (nombreCategoria.includes('adición') || nombreCategoria.includes('adicion')) nombreCategoria = 'adiciones';
         else if (nombreCategoria.includes('bebida')) nombreCategoria = 'bebidas';
       }
-    } else {
-      if (item.categoria_id === 1) nombreCategoria = 'hamburguesas';
-      else if (item.categoria_id === 2) nombreCategoria = 'bebidas';
-      else if (item.categoria_id === 3) nombreCategoria = 'adiciones';
     }
-
-    return {
-      ...item,
-      categoria: nombreCategoria,
-      popular: item.popular || false
-    };
+    return { ...item, categoria: nombreCategoria, popular: item.popular || false };
   });
 }
 
+// Crear Orden: solo registra el pedido para cocina[cite: 22]
 export async function crearOrden(orden) {
+  const ordenFinal = {
+    ...orden,
+    domiciliario_id: orden.domiciliario_id || null,
+    estado_domicilio: 'pendiente'
+  };
+
   const { data, error } = await supabase
     .from('ordenes')
-    .insert([orden])
+    .insert([ordenFinal])
     .select();
 
   if (error) {
@@ -67,21 +62,49 @@ export async function crearOrden(orden) {
   return data;
 }
 
-// NUEVA FUNCIÓN: Escuchar nuevas órdenes en tiempo real
+// DISPARADOR POST-COCINA: Asigna el repartidor cuando el pedido está LISTO/ENTREGADO en KDS Cocina[cite: 22]
+export async function asignarDomiciliarioAlCompletarCocina(ordenId, tipoServicio) {
+  // Validación estricta: solo se ejecuta si el texto contiene "domicilio"
+  const esDomicilio = String(tipoServicio || '').toLowerCase().includes('domicilio');
+  
+  if (!esDomicilio) return null;
+
+  try {
+    // Buscar el primer domiciliario disponible[cite: 22]
+    const { data: domisDisponibles } = await supabase
+      .from('domiciliarios')
+      .select('id')
+      .eq('estado', 'disponible')
+      .limit(1);
+
+    if (domisDisponibles && domisDisponibles.length > 0) {
+      const domiId = domisDisponibles[0].id;
+
+      const { data, error } = await supabase
+        .from('ordenes')
+        .update({
+          domiciliario_id: domiId,
+          estado_domicilio: 'asignado'
+        })
+        .eq('id', ordenId)
+        .select();
+
+      if (error) throw error;
+      return data;
+    }
+  } catch (err) {
+    console.warn("No se pudo asignar el domiciliario al completar cocina:", err.message);
+  }
+  return null;
+}
+
 export function suscribirseAOrdenes(onNuevaOrden) {
   return supabase
     .channel('cambios-ordenes')
     .on(
       'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'ordenes',
-      },
-      (payload) => {
-        console.log('¡Nueva orden recibida en tiempo real!', payload.new);
-        onNuevaOrden(payload.new);
-      }
+      { event: 'INSERT', schema: 'public', table: 'ordenes' },
+      (payload) => { onNuevaOrden(payload.new); }
     )
     .subscribe();
 }
