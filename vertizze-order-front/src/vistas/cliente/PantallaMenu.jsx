@@ -1,10 +1,10 @@
 // ============================================================================
-// ARCHIVO: src/vistas/cliente/PantallaMenu.jsx (Corregido y Conectado a Supabase)
+// ARCHIVO: src/vistas/cliente/PantallaMenu.jsx (Actualizado: Promociones primero)
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
 // IMPORTANTE: Ajusta esta ruta si tu carpeta sdk está en otro nivel (ej: '../../sdk/vertizzeApi')
-import { obtenerMenu } from '../../sdk/vertizzeApi'; 
+import { obtenerMenu } from '../../sdk/vertizzeApi';
 import { 
   UtensilsCrossed, 
   ShoppingBag, 
@@ -12,20 +12,10 @@ import {
   Search, 
   Plus, 
   ShoppingCart,
-  Flame,
-  Coffee,
   Sparkles,
-  PlusCircle,
+  Flame,
   Image as ImageIcon
 } from 'lucide-react';
-
-const CATEGORIAS = [
-  { id: 'todos', nombre: 'Todo el Menú', icono: Sparkles },
-  { id: 'hamburguesas', nombre: 'Hamburguesas', icono: Flame },
-  { id: 'perros', nombre: 'Perros Calientes', icono: UtensilsCrossed },
-  { id: 'adiciones', nombre: 'Adiciones', icono: PlusCircle },
-  { id: 'bebidas', nombre: 'Bebidas', icono: Coffee },
-];
 
 function TarjetaImagen({ src, alt }) {
   const [error, setError] = useState(false);
@@ -53,6 +43,7 @@ export default function PantallaMenu({ modoPedido, alVolverInicio, alIrAlCarrito
   const [categoriaActiva, setCategoriaActiva] = useState('todos');
   const [busqueda, setBusqueda] = useState('');
   const [productosMenu, setProductosMenu] = useState([]);
+  const [categoriasMenu, setCategoriasMenu] = useState([]);
   const [cargando, setCargando] = useState(true);
 
   useEffect(() => {
@@ -60,10 +51,33 @@ export default function PantallaMenu({ modoPedido, alVolverInicio, alIrAlCarrito
       try {
         setCargando(true);
         const datos = await obtenerMenu();
-        setProductosMenu(Array.isArray(datos) ? datos : []);
+        const listaProductos = Array.isArray(datos) ? datos : (datos?.productos || []);
+        setProductosMenu(listaProductos);
+
+        // Extraer categorías únicas de los productos o de la API si vienen separadas
+        // Orden requerido: "Todo el Menú", luego "Promociones", y el resto de la base de datos
+        const categoriasUnicas = Array.from(new Set(listaProductos.map(p => p.categoria).filter(Boolean)));
+        
+        const categoriasFormateadas = [
+          { id: 'todos', nombre: 'Todo el Menú', icono: Sparkles },
+          { id: 'promociones', nombre: 'Promociones', icono: Flame },
+          ...categoriasUnicas
+            .filter(cat => cat.toLowerCase() !== 'promociones')
+            .map(cat => ({
+              id: cat.toLowerCase(),
+              nombre: cat,
+              icono: UtensilsCrossed
+            }))
+        ];
+
+        setCategoriasMenu(categoriasFormateadas);
       } catch (error) {
         console.error("Error al cargar el menú desde la base de datos:", error);
         setProductosMenu([]);
+        setCategoriasMenu([
+          { id: 'todos', nombre: 'Todo el Menú', icono: Sparkles },
+          { id: 'promociones', nombre: 'Promociones', icono: Flame }
+        ]);
       } finally {
         setCargando(false);
       }
@@ -73,13 +87,32 @@ export default function PantallaMenu({ modoPedido, alVolverInicio, alIrAlCarrito
 
   const productosFiltrados = productosMenu.filter(producto => {
     const catProducto = producto.categoria ? producto.categoria.toLowerCase() : '';
-    const coincideCategoria = categoriaActiva === 'todos' || catProducto === categoriaActiva;
+    
+    let coincideCategoria = false;
+    if (categoriaActiva === 'todos') {
+      coincideCategoria = true;
+    } else if (categoriaActiva === 'promociones') {
+      coincideCategoria = producto.en_promocion || producto.enPromocion || catProducto === 'promociones';
+    } else {
+      coincideCategoria = catProducto === categoriaActiva;
+    }
+
     const nombreProd = producto.nombre || '';
     const descProd = producto.descripcion || '';
-    
     const coincideBusqueda = nombreProd.toLowerCase().includes(busqueda.toLowerCase()) ||
                              descProd.toLowerCase().includes(busqueda.toLowerCase());
+                             
     return coincideCategoria && coincideBusqueda;
+  }).sort((a, b) => {
+    // Lógica para ordenar las promociones siempre primero
+    const catA = a.categoria ? a.categoria.toLowerCase() : '';
+    const catB = b.categoria ? b.categoria.toLowerCase() : '';
+    const esPromoA = a.en_promocion || a.enPromocion || catA === 'promociones';
+    const esPromoB = b.en_promocion || b.enPromocion || catB === 'promociones';
+
+    if (esPromoA && !esPromoB) return -1; // A va antes que B
+    if (!esPromoA && esPromoB) return 1;  // B va antes que A
+    return 0; // Mantienen su orden relativo si ambos son o no son promoción
   });
 
   const cantidadTotalItems = carrito.reduce((acc, item) => acc + item.cantidad, 0);
@@ -159,10 +192,10 @@ export default function PantallaMenu({ modoPedido, alVolverInicio, alIrAlCarrito
           </div>
         </div>
 
-        {/* Categorías con scroll horizontal */}
+        {/* Categorías con scroll horizontal dinámicas */}
         <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-none">
-          {CATEGORIAS.map((cat) => {
-            const IconoCat = cat.icono;
+          {categoriasMenu.map((cat) => {
+            const IconoCat = cat.icono || UtensilsCrossed;
             const estaActiva = categoriaActiva === cat.id;
             return (
               <button
@@ -188,47 +221,63 @@ export default function PantallaMenu({ modoPedido, alVolverInicio, alIrAlCarrito
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {productosFiltrados.map((producto) => (
-              <div 
-                key={producto.id}
-                className="group relative bg-neutral-900 border border-neutral-800 rounded-3xl p-5 flex flex-col justify-between hover:border-amber-500/50 transition-all duration-300 shadow-xl overflow-hidden"
-              >
-                {producto.popular && (
-                  <span className="absolute top-4 right-4 z-10 bg-neutral-950/80 backdrop-blur-md border border-amber-500/40 text-amber-400 text-[10px] font-bold uppercase px-2.5 py-1 rounded-full shadow-lg">
-                    Popular 🔥
-                  </span>
-                )}
+            {productosFiltrados.map((producto) => {
+              // Validamos si está en promoción por bandera o por categoría explícita
+              const catProducto = producto.categoria ? producto.categoria.toLowerCase() : '';
+              const enPromocion = producto.en_promocion || producto.enPromocion || catProducto === 'promociones';
 
-                <div>
-                  <div className="w-full h-44 bg-neutral-950 rounded-2xl mb-4 overflow-hidden relative border border-neutral-800">
-                    <TarjetaImagen src={producto.imagen} alt={producto.nombre} />
-                  </div>
+              return (
+                <div 
+                  key={producto.id}
+                  className={`group relative bg-neutral-900 border rounded-3xl p-5 flex flex-col justify-between transition-all duration-300 shadow-xl overflow-hidden ${
+                    enPromocion 
+                      ? 'border-red-500/80 shadow-red-500/15 hover:border-red-400 ring-1 ring-red-500/30' 
+                      : 'border-neutral-800 hover:border-amber-500/50'
+                  }`}
+                >
+                  {enPromocion && (
+                    <span className="absolute top-4 right-4 z-10 bg-red-600/90 backdrop-blur-md border border-red-400 text-white text-[10px] font-bold uppercase px-2.5 py-1 rounded-full shadow-lg flex items-center gap-1">
+                      <Flame className="w-3 h-3" /> En Promoción
+                    </span>
+                  )}
 
-                  <h3 className="font-bold text-lg text-white group-hover:text-amber-400 transition-colors">
-                    {producto.nombre}
-                  </h3>
-                  <p className="text-neutral-400 text-xs mt-1.5 line-clamp-2 leading-relaxed">
-                    {producto.descripcion}
-                  </p>
-                </div>
+                  {!enPromocion && producto.popular && (
+                    <span className="absolute top-4 right-4 z-10 bg-neutral-950/80 backdrop-blur-md border border-amber-500/40 text-amber-400 text-[10px] font-bold uppercase px-2.5 py-1 rounded-full shadow-lg">
+                      Popular 🔥
+                    </span>
+                  )}
 
-                <div className="flex items-center justify-between mt-6 pt-4 border-t border-neutral-800/80">
                   <div>
-                    <span className="text-[10px] text-neutral-500 block uppercase font-semibold">Precio</span>
-                    <span className="text-lg font-black text-white">{formatearPrecio(producto.precio)}</span>
+                    <div className="w-full h-44 bg-neutral-950 rounded-2xl mb-4 overflow-hidden relative border border-neutral-800">
+                      <TarjetaImagen src={producto.imagen} alt={producto.nombre} />
+                    </div>
+
+                    <h3 className="font-bold text-lg text-white group-hover:text-amber-400 transition-colors">
+                      {producto.nombre}
+                    </h3>
+                    <p className="text-neutral-400 text-xs mt-1.5 line-clamp-2 leading-relaxed">
+                      {producto.descripcion}
+                    </p>
                   </div>
 
-                  <button
-                    onClick={() => alAgregarAlCarrito(producto)}
-                    className="flex items-center gap-1.5 bg-neutral-950 hover:bg-amber-500 text-amber-400 hover:text-neutral-950 border border-amber-500/30 hover:border-amber-500 px-4 py-2.5 rounded-xl font-bold text-xs transition-all duration-300 cursor-pointer active:scale-95 shadow-md shadow-amber-500/10"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Agregar</span>
-                  </button>
-                </div>
+                  <div className="flex items-center justify-between mt-6 pt-4 border-t border-neutral-800/80">
+                    <div>
+                      <span className="text-[10px] text-neutral-500 block uppercase font-semibold">Precio</span>
+                      <span className="text-lg font-black text-white">{formatearPrecio(producto.precio)}</span>
+                    </div>
 
-              </div>
-            ))}
+                    <button
+                      onClick={() => alAgregarAlCarrito(producto)}
+                      className="flex items-center gap-1.5 bg-neutral-950 hover:bg-amber-500 text-amber-400 hover:text-neutral-950 border border-amber-500/30 hover:border-amber-500 px-4 py-2.5 rounded-xl font-bold text-xs transition-all duration-300 cursor-pointer active:scale-95 shadow-md shadow-amber-500/10"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Agregar</span>
+                    </button>
+                  </div>
+
+                </div>
+              );
+            })}
           </div>
         )}
 
