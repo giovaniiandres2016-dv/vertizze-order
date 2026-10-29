@@ -1,6 +1,5 @@
 // ============================================================================
-// ARCHIVO: src/vistas/PantallaCarrito.jsx
-// DESCRIPCIÓN: Resumen del carrito con campo de observaciones opcionales por ítem.
+// ARCHIVO: src/vistas/cliente/PantallaCarrito.jsx
 // ============================================================================
 
 import React from 'react';
@@ -11,7 +10,8 @@ import {
   Minus, 
   ShoppingBag, 
   ArrowRight, 
-  UtensilsCrossed 
+  UtensilsCrossed,
+  Bike
 } from 'lucide-react';
 
 export default function PantallaCarrito({ 
@@ -35,42 +35,34 @@ export default function PantallaCarrito({
     <div className="min-h-screen bg-neutral-950 text-white flex flex-col justify-between select-none pb-12">
       
       {/* HEADER */}
-      <header className="sticky top-0 z-30 bg-neutral-950/90 backdrop-blur-md border-b border-neutral-900 px-6 py-4">
+      <header className="sticky top-0 z-30 bg-neutral-950/90 backdrop-blur-md border-b border-neutral-900 px-4 sm:px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           
           <button 
             onClick={alVolverAlMenu}
-            className="flex items-center gap-2 text-neutral-400 hover:text-amber-400 bg-neutral-900 hover:bg-neutral-800 px-4 py-2 rounded-xl border border-neutral-800 transition-all cursor-pointer"
+            className="flex items-center gap-2 text-neutral-400 hover:text-amber-400 bg-neutral-900 hover:bg-neutral-800 px-3 sm:px-4 py-2 rounded-xl border border-neutral-800 transition-all cursor-pointer text-xs sm:text-sm"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span className="text-sm font-medium">Seguir Comprando</span>
+            <span className="font-medium">Seguir Comprando</span>
           </button>
 
           <div className="text-center">
-            <h1 className="text-lg font-black tracking-wider text-white">
+            <h1 className="text-base sm:text-lg font-black tracking-wider text-white">
               TU <span className="text-amber-500">CARRITO</span>
             </h1>
           </div>
 
-          <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 px-3.5 py-1.5 rounded-xl text-amber-400 text-xs font-semibold">
-            {modoPedido === 'para_servir' ? (
-              <>
-                <UtensilsCrossed className="w-3.5 h-3.5" />
-                <span>Para Servir</span>
-              </>
-            ) : (
-              <>
-                <ShoppingBag className="w-3.5 h-3.5" />
-                <span>Para Llevar</span>
-              </>
-            )}
+          <div className="flex items-center gap-1.5 sm:gap-2 bg-amber-500/10 border border-amber-500/30 px-3 py-1.5 rounded-xl text-amber-400 text-xs font-semibold">
+            {modoPedido === 'para_servir' && <><UtensilsCrossed className="w-3.5 h-3.5" /><span>Para Servir</span></>}
+            {modoPedido === 'para_recoger' && <><ShoppingBag className="w-3.5 h-3.5" /><span>Para Llevar</span></>}
+            {modoPedido === 'domicilio' && <><Bike className="w-3.5 h-3.5" /><span>Domicilio</span></>}
           </div>
 
         </div>
       </header>
 
       {/* CONTENIDO PRINCIPAL */}
-      <main className="max-w-4xl w-full mx-auto px-6 py-8 flex-1">
+      <main className="max-w-4xl w-full mx-auto px-4 sm:px-6 py-8 flex-1">
         
         {carrito.length === 0 ? (
           <div className="text-center py-24 bg-neutral-900/30 rounded-3xl border border-neutral-900 flex flex-col items-center justify-center gap-4">
@@ -93,7 +85,7 @@ export default function PantallaCarrito({
             
             {/* Listado de Ítems */}
             <div className="lg:col-span-2 space-y-4">
-              <h2 className="text-xl font-extrabold tracking-tight mb-4">
+              <h2 className="text-lg sm:text-xl font-extrabold tracking-tight mb-4">
                 Productos seleccionados ({totalItems})
               </h2>
 
@@ -102,7 +94,7 @@ export default function PantallaCarrito({
                   key={item.id}
                   className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 flex flex-col gap-3 shadow-md"
                 >
-                  <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center justify-between gap-3 sm:gap-4">
                     <div className="w-14 h-14 bg-neutral-950 rounded-xl overflow-hidden border border-neutral-800 shrink-0">
                       {item.imagen ? (
                         <img src={item.imagen} alt={item.nombre} className="w-full h-full object-cover" />
@@ -118,7 +110,7 @@ export default function PantallaCarrito({
                       <span className="text-xs text-neutral-400 block mt-0.5">{formatearPrecio(item.precio)} c/u</span>
                     </div>
 
-                    <div className="flex items-center gap-2 bg-neutral-950 border border-neutral-800 rounded-xl p-1">
+                    <div className="flex items-center gap-1.5 sm:gap-2 bg-neutral-950 border border-neutral-800 rounded-xl p-1">
                       <button 
                         onClick={() => alActualizarCantidad(item.id, item.cantidad - 1)}
                         className="w-7 h-7 flex items-center justify-center bg-neutral-900 hover:bg-neutral-800 text-neutral-300 rounded-lg transition-colors cursor-pointer"
@@ -152,7 +144,7 @@ export default function PantallaCarrito({
                   <div className="pt-2 border-t border-neutral-800/60">
                     <input 
                       type="text"
-                      placeholder="¿Alguna observación? (Ej: sin cebolla, salsa de preferencia...)"
+                      placeholder="¿Alguna observación? (Ej: sin cebolla...)"
                       value={item.observacion || ''}
                       onChange={(e) => alActualizarObservacion(item.id, e.target.value)}
                       className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-amber-500/50 transition-colors"

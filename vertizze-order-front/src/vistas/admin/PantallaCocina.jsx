@@ -1,11 +1,12 @@
 // ============================================================================
-// ARCHIVO: src/vistas/PantallaCocina.jsx
-// DESCRIPCIÓN: KDS optimizado con control de estados y cronómetro interactivo.
+// ARCHIVO: src/vistas/admin/PantallaCocina.jsx
+// DESCRIPCIÓN: KDS optimizado en tiempo real. Al marcar 'Listo', desfila del KDS y asigna domiciliario.
 // ============================================================================
 
 import React, { useEffect, useState, useRef } from 'react';
-import { Clock, CheckCircle2, Flame, ChefHat, Bell, UtensilsCrossed, Bike, Store } from 'lucide-react';
+import { Clock, ChefHat, Bell, UtensilsCrossed, Bike, Store } from 'lucide-react';
 import { supabase } from '../../sdk/supabaseClient';
+import { asignarDomiciliarioAlCompletarCocina } from '../../sdk/vertizzeApi';
 
 export default function PantallaCocina() {
   const [ordenes, setOrdenes] = useState([]);
@@ -46,6 +47,7 @@ export default function PantallaCocina() {
   useEffect(() => {
     obtenerOrdenes();
 
+    // Suscripción Realtime optimizada para capturar INSERT, UPDATE y DELETE al instante
     const channelName = `ordenes-cocina-realtime-${Date.now()}`;
     const channel = supabase
       .channel(channelName)
@@ -53,6 +55,7 @@ export default function PantallaCocina() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'ordenes' },
         (payload) => {
+          console.log('[KDS REALTIME] Cambio detectado en órdenes:', payload.eventType);
           if (payload.eventType === 'INSERT') {
             reproducirAlertaSonora();
           }
@@ -68,10 +71,11 @@ export default function PantallaCocina() {
 
   const obtenerOrdenes = async () => {
     try {
+      // Traemos las órdenes activas en cocina (Pendiente o En Proceso) de forma insensible a mayúsculas
       const { data, error } = await supabase
         .from('ordenes')
         .select('*')
-        .neq('estado', 'entregado')
+        .or('estado.ilike.pendiente,estado.ilike.en_proceso,estado.ilike.en proceso')
         .order('id', { ascending: true });
 
       if (error) throw error;
@@ -94,17 +98,15 @@ export default function PantallaCocina() {
     const estadoActual = (orden.estado || 'Pendiente').toLowerCase().trim();
     let nuevoEstado = '';
     let datosActualizacion = {};
-
     const ahora = new Date().toISOString();
 
-    // Normalizamos las comparaciones de estados para evitar desajustes
-    if (estadoActual === 'pendiente' || estadoActual === 'Pendiente') {
+    if (estadoActual === 'pendiente') {
       nuevoEstado = 'en_proceso';
       datosActualizacion = {
         estado: nuevoEstado,
         tiempo_inicio: ahora
       };
-    } else if (estadoActual === 'en_proceso') {
+    } else if (estadoActual === 'en_proceso' || estadoActual === 'en proceso') {
       nuevoEstado = 'listo';
       
       let duracionTexto = "0 min";
@@ -112,15 +114,9 @@ export default function PantallaCocina() {
         const inicio = new Date(orden.tiempo_inicio).getTime();
         const fin = new Date(ahora).getTime();
         const diffSegundos = Math.floor((fin - inicio) / 1000);
-        
         const mins = Math.floor(diffSegundos / 60);
         const segs = diffSegundos % 60;
-
-        if (mins > 0) {
-          duracionTexto = `${mins} min ${segs} seg`;
-        } else {
-          duracionTexto = `${segs} seg`;
-        }
+        duracionTexto = mins > 0 ? `${mins} min ${segs} seg` : `${segs} seg`;
       }
 
       datosActualizacion = {
@@ -128,24 +124,29 @@ export default function PantallaCocina() {
         tiempo_fin: ahora,
         duracion_preparacion: duracionTexto
       };
-    } else if (estadoActual === 'listo') {
-      nuevoEstado = 'entregado';
-      datosActualizacion = {
-        estado: nuevoEstado
-      };
     }
 
     if (nuevoEstado) {
       try {
+        console.log(`[KDS COCINA] Cambiando orden #${orden.id} a estado: "${nuevoEstado}"`);
+        
         const { error } = await supabase
           .from('ordenes')
           .update(datosActualizacion)
           .eq('id', orden.id);
 
         if (error) throw error;
+
+        // Si el pedido pasó a estado 'listo', ejecutamos la asignación de domiciliario inmediatamente
+        if (nuevoEstado === 'listo') {
+          console.log(`[KDS COCINA] Invocando asignación de domiciliario para orden #${orden.id} (Tipo: ${orden.tipo_servicio})`);
+          await asignarDomiciliarioAlCompletarCocina(orden.id, orden.tipo_servicio);
+        }
+
+        // Refrescar inmediatamente el estado local para quitar la tarjeta
         await obtenerOrdenes();
       } catch (error) {
-        console.error('Error al actualizar estado:', error);
+        console.error('Error al actualizar estado en cocina:', error);
       }
     }
   };
@@ -222,7 +223,6 @@ export default function PantallaCocina() {
   return (
     <div className="min-h-screen bg-neutral-950 text-white p-3 md:p-5 select-none">
       
-      {/* Cabecera del KDS */}
       <div className="flex items-center justify-between border-b border-neutral-800 pb-3 mb-5">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center justify-center text-amber-400">
@@ -230,7 +230,7 @@ export default function PantallaCocina() {
           </div>
           <div>
             <h1 className="text-lg md:text-xl font-black tracking-tight text-white">KDS - Módulo de Cocina</h1>
-            <p className="text-xs text-neutral-400">Toca cualquier tarjeta para avanzar su estado</p>
+            <p className="text-xs text-neutral-400">Haz clic en la tarjeta para avanzar el estado (al marcar "Listo" el pedido pasa al repartidor y sale de cocina)</p>
           </div>
         </div>
 
@@ -251,7 +251,6 @@ export default function PantallaCocina() {
         </div>
       </div>
 
-      {/* Contenido Principal */}
       {cargando && ordenes.length === 0 ? (
         <div className="text-center py-20 text-neutral-500 text-sm">Sincronizando órdenes con la base de datos...</div>
       ) : ordenes.length === 0 ? (
@@ -273,16 +272,11 @@ export default function PantallaCocina() {
             let textoBotonAccion = "Iniciar Preparación";
             let estiloBotonAccion = "bg-neutral-800 hover:bg-neutral-700 text-white border border-white/20";
 
-            if (estadoActual === 'en_proceso') {
+            if (estadoActual === 'en_proceso' || estadoActual === 'en proceso') {
               estilosTarjeta = "border-amber-500 bg-amber-950/95 text-amber-50 shadow-xl shadow-amber-950/40 hover:border-amber-400";
               franjaColor = "bg-amber-400";
               textoBotonAccion = "Marcar como Listo";
               estiloBotonAccion = "bg-amber-500 hover:bg-amber-400 text-neutral-950 font-black shadow-lg";
-            } else if (estadoActual === 'listo') {
-              estilosTarjeta = "border-emerald-500 bg-emerald-950/95 text-emerald-50 shadow-xl shadow-emerald-950/40 hover:border-emerald-400";
-              franjaColor = "bg-emerald-400";
-              textoBotonAccion = "Entregar";
-              estiloBotonAccion = "bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-black shadow-lg";
             }
 
             return (
@@ -300,7 +294,7 @@ export default function PantallaCocina() {
                     </span>
                     
                     <div className="flex items-center gap-1.5">
-                      {estadoActual === 'en_proceso' && orden.tiempo_inicio && (
+                      {(estadoActual === 'en_proceso' || estadoActual === 'en proceso') && orden.tiempo_inicio && (
                         <CronometroActivo tiempoInicio={orden.tiempo_inicio} />
                       )}
 
@@ -336,7 +330,6 @@ export default function PantallaCocina() {
                   </div>
                 </div>
 
-                {/* Botón de acción grande y limpio */}
                 <div className="mt-4 pt-3 border-t border-white/15">
                   <div className={`w-full py-2.5 rounded-xl text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${estiloBotonAccion}`}>
                     <span>{textoBotonAccion}</span>

@@ -1,6 +1,5 @@
 // ============================================================================
-// ARCHIVO: src/vistas/PantallaExito.jsx
-// DESCRIPCIÓN: Pantalla de éxito con parseo ultra-seguro para formato texto o JSON.
+// ARCHIVO: src/vistas/cliente/PantallaExito.jsx
 // ============================================================================
 
 import React, { useEffect, useState } from 'react';
@@ -26,28 +25,23 @@ export default function PantallaExito({ datosOrden, alVolverInicio }) {
     return () => clearInterval(intervalo);
   }, [alVolverInicio]);
 
-  // Función totalmente segura para extraer el texto de los items sin romper el render
   const obtenerTextoItems = () => {
     const rawItems = datosOrden?.productos || datosOrden?.items;
 
     if (!rawItems) return 'Sin productos especificados';
 
-    // Si ya viene como texto plano (separado por comas)
     if (typeof rawItems === 'string') {
       try {
-        // Intentar parsear por si es un JSON stringificado (registros antiguos de la BD)
         const parsed = JSON.parse(rawItems);
         if (Array.isArray(parsed)) {
           return parsed.map(i => `${i.cantidad || 1}x ${i.nombre || 'Producto'}`).join(', ');
         }
       } catch (e) {
-        // Si falla el parse, significa que es texto plano puro (ej: "1x Burger, 2x Papas")
         return rawItems;
       }
       return rawItems;
     }
 
-    // Si viene como arreglo de objetos (carrito activo)
     if (Array.isArray(rawItems)) {
       return rawItems.map(i => `${i.cantidad || 1}x ${i.nombre || 'Producto'}`).join(', ');
     }
@@ -58,7 +52,7 @@ export default function PantallaExito({ datosOrden, alVolverInicio }) {
   const textoItemsFormateado = obtenerTextoItems();
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-white flex flex-col items-center justify-center p-6 select-none">
+    <div className="min-h-screen bg-neutral-950 text-white flex flex-col items-center justify-center p-4 sm:p-6 select-none">
       
       <div className="max-w-lg w-full bg-neutral-900 border border-neutral-800 rounded-3xl p-6 md:p-8 space-y-5 shadow-2xl relative overflow-hidden my-auto">
         
@@ -93,9 +87,9 @@ export default function PantallaExito({ datosOrden, alVolverInicio }) {
             <Store className="w-5 h-5" />
           </div>
           <div>
-            <h4 className="text-xs font-black text-amber-400 uppercase tracking-wider">Instrucción importante</h4>
+            <h4 className="text-xs font-black text-amber-400 uppercase tracking-wider">Estado de tu orden</h4>
             <p className="text-xs text-neutral-200 mt-0.5 leading-snug">
-              Acércate a <strong className="text-white underline">Caja</strong> dictando tu número de turno para validar y efectuar el pago.
+              Tu pago fue procesado correctamente y el pedido ya se encuentra en preparación para cocina / despacho.
             </p>
           </div>
         </div>
@@ -123,7 +117,6 @@ export default function PantallaExito({ datosOrden, alVolverInicio }) {
             <span>Resumen del Ticket</span>
           </div>
 
-          {/* Renderizado limpio del texto separado por comas */}
           <div className="py-1">
             <p className="text-xs text-amber-300 font-medium leading-relaxed">
               {textoItemsFormateado}
@@ -144,7 +137,7 @@ export default function PantallaExito({ datosOrden, alVolverInicio }) {
               </span>
             </div>
             <div className="flex justify-between pt-2 border-t border-neutral-800/60 text-sm font-black">
-              <span className="text-white">Total a Pagar:</span>
+              <span className="text-white">Total Pagado:</span>
               <span className="text-amber-400">$ {(datosOrden?.total || 0).toLocaleString('es-CO')}</span>
             </div>
           </div>

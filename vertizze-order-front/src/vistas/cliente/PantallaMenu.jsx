@@ -1,13 +1,13 @@
 // ============================================================================
-// ARCHIVO: src/vistas/cliente/PantallaMenu.jsx (Actualizado: Promociones primero)
+// ARCHIVO: src/vistas/cliente/PantallaMenu.jsx
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
-// IMPORTANTE: Ajusta esta ruta si tu carpeta sdk está en otro nivel (ej: '../../sdk/vertizzeApi')
 import { obtenerMenu } from '../../sdk/vertizzeApi';
 import { 
   UtensilsCrossed, 
   ShoppingBag, 
+  Bike, 
   ArrowLeft, 
   Search, 
   Plus, 
@@ -54,8 +54,6 @@ export default function PantallaMenu({ modoPedido, alVolverInicio, alIrAlCarrito
         const listaProductos = Array.isArray(datos) ? datos : (datos?.productos || []);
         setProductosMenu(listaProductos);
 
-        // Extraer categorías únicas de los productos o de la API si vienen separadas
-        // Orden requerido: "Todo el Menú", luego "Promociones", y el resto de la base de datos
         const categoriasUnicas = Array.from(new Set(listaProductos.map(p => p.categoria).filter(Boolean)));
         
         const categoriasFormateadas = [
@@ -72,7 +70,7 @@ export default function PantallaMenu({ modoPedido, alVolverInicio, alIrAlCarrito
 
         setCategoriasMenu(categoriasFormateadas);
       } catch (error) {
-        console.error("Error al cargar el menú desde la base de datos:", error);
+        console.error("Error al cargar el menú:", error);
         setProductosMenu([]);
         setCategoriasMenu([
           { id: 'todos', nombre: 'Todo el Menú', icono: Sparkles },
@@ -104,15 +102,14 @@ export default function PantallaMenu({ modoPedido, alVolverInicio, alIrAlCarrito
                              
     return coincideCategoria && coincideBusqueda;
   }).sort((a, b) => {
-    // Lógica para ordenar las promociones siempre primero
     const catA = a.categoria ? a.categoria.toLowerCase() : '';
     const catB = b.categoria ? b.categoria.toLowerCase() : '';
     const esPromoA = a.en_promocion || a.enPromocion || catA === 'promociones';
     const esPromoB = b.en_promocion || b.enPromocion || catB === 'promociones';
 
-    if (esPromoA && !esPromoB) return -1; // A va antes que B
-    if (!esPromoA && esPromoB) return 1;  // B va antes que A
-    return 0; // Mantienen su orden relativo si ambos son o no son promoción
+    if (esPromoA && !esPromoB) return -1;
+    if (!esPromoA && esPromoB) return 1;
+    return 0;
   });
 
   const cantidadTotalItems = carrito.reduce((acc, item) => acc + item.cantidad, 0);
@@ -135,40 +132,32 @@ export default function PantallaMenu({ modoPedido, alVolverInicio, alIrAlCarrito
     <div className="min-h-screen bg-neutral-950 text-white flex flex-col justify-between select-none pb-28">
       
       {/* HEADER FIJO */}
-      <header className="sticky top-0 z-30 bg-neutral-950/95 backdrop-blur-md border-b border-neutral-900 px-6 py-4">
+      <header className="sticky top-0 z-30 bg-neutral-950/95 backdrop-blur-md border-b border-neutral-900 px-4 sm:px-6 py-4">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <button 
             onClick={alVolverInicio}
-            className="flex items-center gap-2 text-neutral-400 hover:text-amber-400 bg-neutral-900 hover:bg-neutral-800 px-4 py-2 rounded-xl border border-neutral-800 transition-all cursor-pointer"
+            className="flex items-center gap-2 text-neutral-400 hover:text-amber-400 bg-neutral-900 hover:bg-neutral-800 px-3 sm:px-4 py-2 rounded-xl border border-neutral-800 transition-all cursor-pointer text-xs sm:text-sm"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span className="text-sm font-medium">Volver</span>
+            <span className="font-medium">Volver</span>
           </button>
 
           <div className="text-center">
-            <h1 className="text-xl font-black tracking-wider text-white">
+            <h1 className="text-lg sm:text-xl font-black tracking-wider text-white">
               VERTIZZE<span className="text-amber-500">ORDER</span>
             </h1>
           </div>
 
-          <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 px-3.5 py-1.5 rounded-xl text-amber-400 text-xs font-semibold">
-            {modoPedido === 'para_servir' ? (
-              <>
-                <UtensilsCrossed className="w-3.5 h-3.5" />
-                <span>Para Servir</span>
-              </>
-            ) : (
-              <>
-                <ShoppingBag className="w-3.5 h-3.5" />
-                <span>Para Llevar</span>
-              </>
-            )}
+          <div className="flex items-center gap-1.5 sm:gap-2 bg-amber-500/10 border border-amber-500/30 px-3 py-1.5 rounded-xl text-amber-400 text-xs font-semibold">
+            {modoPedido === 'para_servir' && <><UtensilsCrossed className="w-3.5 h-3.5" /><span>Para Servir</span></>}
+            {modoPedido === 'para_recoger' && <><ShoppingBag className="w-3.5 h-3.5" /><span>Para Llevar</span></>}
+            {modoPedido === 'domicilio' && <><Bike className="w-3.5 h-3.5" /><span>Domicilio</span></>}
           </div>
         </div>
       </header>
 
       {/* CUERPO PRINCIPAL */}
-      <main className="max-w-6xl w-full mx-auto px-6 py-6 flex-1 space-y-6">
+      <main className="max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 flex-1 space-y-6">
         
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
@@ -184,7 +173,7 @@ export default function PantallaMenu({ modoPedido, alVolverInicio, alIrAlCarrito
             </span>
             <input 
               type="text"
-              placeholder="Buscar producto o adición..."
+              placeholder="Buscar producto..."
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
               className="w-full bg-neutral-900 border border-neutral-800 rounded-2xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500/50 transition-colors"
@@ -192,7 +181,7 @@ export default function PantallaMenu({ modoPedido, alVolverInicio, alIrAlCarrito
           </div>
         </div>
 
-        {/* Categorías con scroll horizontal dinámicas */}
+        {/* Categorías con scroll horizontal */}
         <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-none">
           {categoriasMenu.map((cat) => {
             const IconoCat = cat.icono || UtensilsCrossed;
@@ -217,12 +206,11 @@ export default function PantallaMenu({ modoPedido, alVolverInicio, alIrAlCarrito
         {/* Cuadrícula de Productos */}
         {productosFiltrados.length === 0 ? (
           <div className="text-center py-20 bg-neutral-900/40 rounded-3xl border border-neutral-900">
-            <p className="text-neutral-400 text-base">No hay productos registrados en la base de datos o que coincidan con la búsqueda.</p>
+            <p className="text-neutral-400 text-base">No hay productos disponibles con ese criterio.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {productosFiltrados.map((producto) => {
-              // Validamos si está en promoción por bandera o por categoría explícita
               const catProducto = producto.categoria ? producto.categoria.toLowerCase() : '';
               const enPromocion = producto.en_promocion || producto.enPromocion || catProducto === 'promociones';
 

@@ -1,13 +1,13 @@
 // ============================================================================
 // ARCHIVO: src/vistas/DashboardGeneral.jsx
-// DESCRIPCIÓN: Panel con Resumen 100% Real y Filtrado por Fechas, Egresos, Clientes, Domiciliarios, Pagos, Órdenes, Contabilidad y Menú.
+// DESCRIPCIÓN: Panel con Resumen 100% Real, Egresos, Clientes, Módulo de Domiciliarios Seguro (CRUD, Pines y Productividad), Pagos filtrados sin Wompi duplicado, Órdenes y Contabilidad.
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
 import { 
   Menu, X, LayoutDashboard, FileSpreadsheet, 
   ClipboardList, Utensils, LogOut, Store, ExternalLink,
-  Plus, Calendar, Download, Edit3, Trash2, Image as ImageIcon, CheckCircle, Clock, Printer, CreditCard, AlertCircle, ArrowUpRight, Search, Filter, ChevronLeft, ChevronRight, Users, Phone, MapPin, Receipt, FileText, Truck
+  Plus, Calendar, Download, Edit3, Trash2, Image as ImageIcon, CheckCircle, Clock, Printer, CreditCard, AlertCircle, ArrowUpRight, Search, Filter, ChevronLeft, ChevronRight, Users, Phone, MapPin, Receipt, FileText, Truck, Key, ShieldCheck, RefreshCw
 } from 'lucide-react';
 import { obtenerMenu, supabase } from '../../sdk/vertizzeApi';
 
@@ -27,9 +27,31 @@ export default function DashboardGeneral() {
   const [fechaFin, setFechaFin] = useState(fechaHoyStr);
   const [estadoCajaCerrada, setEstadoCajaCerrada] = useState(false);
 
+  // Estados para la gestión de códigos diarios de cierre (Admin)
+  const [codigoActivoHoy, setCodigoActivoHoy] = useState('Cargando...');
+  const [codigoUsadoHoy, setCodigoUsadoHoy] = useState(false);
+  const [nuevoCodigoInput, setNuevoCodigoInput] = useState('');
+
+  // Estados para el Modal de Cierre de Caja con PIN Seguro
+  const [modalPinAbierto, setModalPinAbierto] = useState(false);
+  const [pinCierre, setPinCierre] = useState('');
+  const [errorPin, setErrorPin] = useState('');
+  const [validandoPin, setValidandoPin] = useState(false);
+
   // Estado de Órdenes conectado a la base de datos
   const [ordenes, setOrdenes] = useState([]);
   const [cargandoOrdenes, setCargandoOrdenes] = useState(true);
+
+  // Estados para el Módulo de Domiciliarios y Seguridad de Pines
+  const [domiciliarios, setDomiciliarios] = useState([]);
+  const [cargandoDomiciliarios, setCargandoDomiciliarios] = useState(true);
+  const [modalDomiciliarioAbierto, setModalDomiciliarioAbierto] = useState(false);
+  const [modoEdicionDomiciliario, setModoEdicionDomiciliario] = useState(false);
+  const [domiciliarioActualId, setDomiciliarioActualId] = useState(null);
+  const [formNombreDomi, setFormNombreDomi] = useState('');
+  const [formTelefonoDomi, setFormTelefonoDomi] = useState('');
+  const [formPinDomi, setFormPinDomi] = useState('');
+  const [formEstadoDomi, setFormEstadoDomi] = useState('fuera de turno');
 
   // Estados para el Módulo de Egresos / Facturas (CRUD Completo y Paginación)
   const [egresos, setEgresos] = useState([]);
@@ -157,9 +179,116 @@ export default function DashboardGeneral() {
           texto += ` (Nota: ${item.observacion})`;
         }
         return texto;
-      }).join(', ');
+      }).join(' | ');
     }
     return String(itemsRaw);
+  };
+
+  // Consultar el código del día activo
+  const consultarCodigoDelDia = async () => {
+    try {
+      const hoyStr = new Date().toISOString().split('T')[0];
+      const { data, error } = await supabase
+        .from('codigos_cierre_diario')
+        .select('*')
+        .eq('fecha', hoyStr)
+        .maybeSingle();
+
+      if (data) {
+        setCodigoActivoHoy(data.codigo);
+        setCodigoUsadoHoy(data.usado);
+      } else {
+        setCodigoActivoHoy('No generado');
+        setCodigoUsadoHoy(false);
+      }
+    } catch (err) {
+      console.error("Error consultando código:", err.message);
+    }
+  };
+
+  // Función del Admin para generar/rotar código nuevo
+  const rotarCodigoDelDia = async (codigoPersonalizado = null) => {
+    const codigoAGenerar = codigoPersonalizado || Math.floor(1000 + Math.random() * 9000).toString();
+
+    try {
+      const { error } = await supabase.rpc('generar_o_rotar_codigo_diario', {
+        nuevo_codigo: codigoAGenerar
+      });
+
+      if (error) throw error;
+
+      alert(`¡Código actualizado con éxito!\nEl nuevo PIN de cierre para hoy es: ${codigoAGenerar}\nEl código anterior ha sido quemado.`);
+      setNuevoCodigoInput('');
+      consultarCodigoDelDia();
+    } catch (err) {
+      console.error("Error al rotar código:", err.message);
+      alert("No se pudo actualizar el código: " + err.message);
+    }
+  };
+
+  // Confirmar cierre de caja con validación y quema de PIN seguro
+  const confirmarCierreConPin = async (e) => {
+    e.preventDefault();
+    setErrorPin('');
+
+    if (!pinCierre || pinCierre.trim().length < 4) {
+      setErrorPin('Ingresa el código diario proporcionado.');
+      return;
+    }
+
+    setValidandoPin(true);
+    try {
+      const { data: esValido, error: errRpc } = await supabase.rpc('validar_y_quemar_codigo', {
+        pin_ingresado: pinCierre.trim()
+      });
+
+      if (errRpc) throw errRpc;
+
+      if (!esValido) {
+        setErrorPin('Código incorrecto, ya fue utilizado hoy o ha expirado.');
+        setValidandoPin(false);
+        return;
+      }
+
+      const hoyStr = new Date().toISOString().split('T')[0];
+      const ordenesHoy = ordenes.filter(o => {
+        const fechaOrd = o.creado_en ? o.creado_en.split('T')[0] : '';
+        return fechaOrd === hoyStr;
+      });
+
+      const totalEfectivoHoy = ordenesHoy
+        .filter(o => o.estado_pago?.toLowerCase() === 'pagado' && o.metodo_pago?.toLowerCase().includes('efectivo'))
+        .reduce((acc, curr) => acc + Number(curr.subtotal || 0), 0);
+
+      const totalDigitalHoy = ordenesHoy
+        .filter(o => o.estado_pago?.toLowerCase() === 'pagado' && (!o.metodo_pago || !o.metodo_pago.toLowerCase().includes('efectivo')))
+        .reduce((acc, curr) => acc + Number(curr.subtotal || 0), 0);
+
+      const totalVentasHoy = totalEfectivoHoy + totalDigitalHoy;
+
+      await supabase.from('cierres_caja').insert([{
+        fecha: hoyStr,
+        total_ventas: totalVentasHoy,
+        total_efectivo: totalEfectivoHoy,
+        total_digital: totalDigitalHoy,
+        total_pedidos: ordenesHoy.length,
+        cerrado_por: 'Cajero Autorizado'
+      }]);
+
+      exportarACSV();
+
+      setEstadoCajaCerrada(true);
+      setModalPinAbierto(false);
+      setPinCierre('');
+      consultarCodigoDelDia();
+      alert(`¡Caja cerrada y código quemado con éxito!\nReporte del día generado correctamente.`);
+
+    } catch (err) {
+      console.error("Error al cerrar caja:", err.message);
+      setErrorPin("Error: " + err.message);
+    } finally {
+      setValidandoPin(false);
+    }
   };
 
   // Sincronizar automáticamente o insertar cliente basado en las órdenes
@@ -196,6 +325,7 @@ export default function DashboardGeneral() {
   // Cargar datos iniciales y configurar canales en Tiempo Real
   useEffect(() => {
     cargarDatosBD();
+    consultarCodigoDelDia();
 
     const timerSeguridad = setTimeout(() => {
       setCargandoInicial(false);
@@ -203,6 +333,7 @@ export default function DashboardGeneral() {
       setCargandoClientes(false);
       setCargandoMenu(false);
       setCargandoEgresos(false);
+      setCargandoDomiciliarios(false);
     }, 5000);
 
     const canalRealtime = supabase
@@ -225,6 +356,11 @@ export default function DashboardGeneral() {
             cargarDatosBD();
           }
         }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'domiciliarios' },
+        (payload) => { cargarDatosBD(); }
       )
       .on(
         'postgres_changes',
@@ -256,18 +392,20 @@ export default function DashboardGeneral() {
 
   const cargarDatosBD = async () => {
     try {
-      const [resProductos, resCategorias, resOrdenes, resClientes, resFacturas] = await Promise.all([
+      const [resProductos, resCategorias, resOrdenes, resClientes, resFacturas, resDomiciliarios] = await Promise.all([
         supabase.from('productos').select('*').order('id', { ascending: true }),
         supabase.from('categorias').select('*').order('id', { ascending: true }),
         supabase.from('ordenes').select('*').order('id', { ascending: false }),
         supabase.from('clientes').select('*').order('creado_en', { ascending: false }),
-        supabase.from('facturas').select('*, detalle_facturas(*)').order('id', { ascending: false })
+        supabase.from('facturas').select('*, detalle_facturas(*)').order('id', { ascending: false }),
+        supabase.from('domiciliarios').select('*').order('id', { ascending: true })
       ]);
 
       setProductos(resProductos.data || []);
       setCategorias(resCategorias.data || []);
       setOrdenes(resOrdenes.data || []);
       setClientes(resClientes.data || []);
+      setDomiciliarios(resDomiciliarios.data || []);
 
       const listaEgresosAplanada = [];
       if (resFacturas.data) {
@@ -318,7 +456,99 @@ export default function DashboardGeneral() {
       setCargandoOrdenes(false);
       setCargandoClientes(false);
       setCargandoEgresos(false);
+      setCargandoDomiciliarios(false);
       setCargandoInicial(false);
+    }
+  };
+
+  // Funciones para Gestión Segura de Domiciliarios
+  const abrirModalCrearDomiciliario = () => {
+    setModoEdicionDomiciliario(false);
+    setDomiciliarioActualId(null);
+    setFormNombreDomi('');
+    setFormTelefonoDomi('');
+    setFormPinDomi('');
+    setFormEstadoDomi('disponible');
+    setModalDomiciliarioAbierto(true);
+  };
+
+  const abrirModalEditarDomiciliario = (domi) => {
+    setModoEdicionDomiciliario(true);
+    setDomiciliarioActualId(domi.id);
+    setFormNombreDomi(domi.nombre || '');
+    setFormTelefonoDomi(limpiarTelefono(domi.telefono));
+    setFormPinDomi(domi.pin_acceso || '');
+    setFormEstadoDomi(domi.estado || 'disponible');
+    setModalDomiciliarioAbierto(true);
+  };
+
+  const guardarDomiciliario = async (e) => {
+    e.preventDefault();
+    const telLimpio = limpiarTelefono(formTelefonoDomi);
+    if (!formNombreDomi || !telLimpio || !formPinDomi) {
+      alert('Nombre, teléfono y PIN de acceso son obligatorios para garantizar la seguridad.');
+      return;
+    }
+
+    if (formPinDomi.length < 4) {
+      alert('Por seguridad, el PIN de acceso debe tener al menos 4 dígitos.');
+      return;
+    }
+
+    const datosDomi = {
+      nombre: capitalizarTexto(formNombreDomi),
+      telefono: telLimpio,
+      pin_acceso: formPinDomi,
+      estado: formEstadoDomi
+    };
+
+    try {
+      if (modoEdicionDomiciliario) {
+        const { error } = await supabase
+          .from('domiciliarios')
+          .update(datosDomi)
+          .eq('id', domiciliarioActualId);
+
+        if (error) throw error;
+        alert('¡Domiciliario actualizado correctamente!');
+      } else {
+        const { error } = await supabase
+          .from('domiciliarios')
+          .insert([datosDomi]);
+
+        if (error) throw error;
+        alert('¡Domiciliario registrado con éxito!');
+      }
+
+      setModalDomiciliarioAbierto(false);
+      cargarDatosBD();
+    } catch (error) {
+      console.error("Error al guardar domiciliario:", error.message);
+      alert("Hubo un error al guardar el domiciliario: " + error.message);
+    }
+  };
+
+  const cambiarEstadoDomiciliarioAdmin = async (id, nuevoEstado) => {
+    setDomiciliarios(prev => prev.map(d => d.id === id ? { ...d, estado: nuevoEstado } : d));
+    try {
+      const { error } = await supabase.from('domiciliarios').update({ estado: nuevoEstado }).eq('id', id);
+      if (error) throw error;
+    } catch (error) {
+      console.error("Error al actualizar estado del domiciliario:", error.message);
+      cargarDatosBD();
+    }
+  };
+
+  const eliminarDomiciliario = async (id) => {
+    if (window.confirm('¿Estás seguro de inhabilitar/eliminar este domiciliario? Esta acción es irreversible.')) {
+      try {
+        const { error } = await supabase.from('domiciliarios').delete().eq('id', id);
+        if (error) throw error;
+        cargarDatosBD();
+      } catch (error) {
+        console.error("Error al eliminar domiciliario:", error.message);
+        alert("No se pudo eliminar el registro del domiciliario.");
+      }
     }
   };
 
@@ -676,6 +906,7 @@ export default function DashboardGeneral() {
     }
   };
 
+  // REPORTE CSV MEJORADO CON ESTILO HTML + XML (Soporte de Colores Naranja/Blanco Vértizze Order y Columnas Separadas)
   const exportarACSV = () => {
     const ordenesFiltradas = ordenes.filter(o => {
       if (!fechaInicio || !fechaFin) return true;
@@ -688,26 +919,70 @@ export default function DashboardGeneral() {
       return;
     }
 
-    const cabeceras = ["ID", "Nro Orden", "Tipo Servicio", "Cliente", "Items", "Subtotal", "Estado Pago", "Metodo Pago", "Estado Pedido", "Fecha"];
-    const filas = ordenesFiltradas.map(o => [
-      o.id,
-      o.numero_orden,
-      o.tipo_servicio,
-      `"${o.cliente_nombre || 'Cliente'}"`,
-      `"${formatearItems(o.items).replace(/"/g, '""')}"`,
-      o.subtotal,
-      o.estado_pago,
-      o.metodo_pago,
-      o.estado,
-      o.creado_en ? o.creado_en.split('T')[0] : ''
-    ]);
+    // Cabeceras HTML estilizables para Excel con colores corporativos Vértizze Order (Naranja claro y Blanco)
+    let contenidoTablaHtml = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; font-size: 11pt; }
+          th { background-color: #F97316; color: #FFFFFF; font-weight: bold; text-align: center; padding: 10px; border: 1px solid #C2410C; }
+          td { padding: 8px; border: 1px solid #E5E7EB; text-align: left; vertical-align: middle; }
+          tr:nth-child(even) { background-color: #FFF7ED; }
+          .titulo { font-size: 16pt; font-weight: bold; color: #C2410C; margin-bottom: 10px; }
+        </style>
+      </head>
+      <body>
+        <div class="titulo">REPORTE CONTABLE - VÉRTIZZE ORDER</div>
+        <p><b>Periodo:</b> ${fechaInicio} al ${fechaFin}</p>
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Nro Orden</th>
+              <th>Tipo Servicio</th>
+              <th>Cliente</th>
+              <th>Ítems</th>
+              <th>Subtotal</th>
+              <th>Estado Pago</th>
+              <th>Método Pago</th>
+              <th>Estado Pedido</th>
+              <th>Fecha</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
 
-    const contenidoCSV = [cabeceras.join(","), ...filas.map(f => f.join(","))].join("\n");
-    const blob = new Blob(["\ufeff" + contenidoCSV], { type: 'text/csv;charset=utf-8;' });
+    ordenesFiltradas.forEach(o => {
+      contenidoTablaHtml += `
+        <tr>
+          <td>${o.id}</td>
+          <td>${o.numero_orden || ''}</td>
+          <td>${capitalizarTexto(o.tipo_servicio) || ''}</td>
+          <td>${capitalizarTexto(o.cliente_nombre) || 'Cliente'}</td>
+          <td>${formatearItems(o.items)}</td>
+          <td>$ ${Number(o.subtotal || 0).toLocaleString()}</td>
+          <td>${capitalizarTexto(o.estado_pago) || ''}</td>
+          <td>${capitalizarTexto(o.metodo_pago) || ''}</td>
+          <td>${capitalizarTexto(o.estado) || ''}</td>
+          <td>${o.creado_en ? o.creado_en.split('T')[0] : ''}</td>
+        </tr>
+      `;
+    });
+
+    contenidoTablaHtml += `
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `;
+
+    // Generar archivo compatible con Excel con formato enriquecido
+    const blob = new Blob([contenidoTablaHtml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `reporte_contable_${fechaInicio}_al_${fechaFin}.csv`);
+    link.setAttribute("download", `reporte_contable_${fechaInicio}_al_${fechaFin}.xls`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -719,26 +994,67 @@ export default function DashboardGeneral() {
       return;
     }
 
-    const cabeceras = ["ID", "Nro Orden", "Tipo Servicio", "Cliente", "Items", "Subtotal", "Estado Pago", "Metodo Pago", "Estado Pedido", "Fecha"];
-    const filas = ordenesFiltradas.map(o => [
-      o.id,
-      o.numero_orden,
-      o.tipo_servicio,
-      `"${o.cliente_nombre || 'Cliente'}"`,
-      `"${formatearItems(o.items).replace(/"/g, '""')}"`,
-      o.subtotal,
-      o.estado_pago,
-      o.metodo_pago,
-      o.estado,
-      o.creado_en ? o.creado_en.split('T')[0] : ''
-    ]);
+    let contenidoTablaHtml = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; font-size: 11pt; }
+          th { background-color: #F97316; color: #FFFFFF; font-weight: bold; text-align: center; padding: 10px; border: 1px solid #C2410C; }
+          td { padding: 8px; border: 1px solid #E5E7EB; text-align: left; vertical-align: middle; }
+          tr:nth-child(even) { background-color: #FFF7ED; }
+          .titulo { font-size: 16pt; font-weight: bold; color: #C2410C; margin-bottom: 10px; }
+        </style>
+      </head>
+      <body>
+        <div class="titulo">REPORTE DE ÓRDENES - VÉRTIZZE ORDER</div>
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Nro Orden</th>
+              <th>Tipo Servicio</th>
+              <th>Cliente</th>
+              <th>Ítems</th>
+              <th>Subtotal</th>
+              <th>Estado Pago</th>
+              <th>Método Pago</th>
+              <th>Estado Pedido</th>
+              <th>Fecha</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
 
-    const contenidoCSV = [cabeceras.join(","), ...filas.map(f => f.join(","))].join("\n");
-    const blob = new Blob(["\ufeff" + contenidoCSV], { type: 'text/csv;charset=utf-8;' });
+    ordenesFiltradas.forEach(o => {
+      contenidoTablaHtml += `
+        <tr>
+          <td>${o.id}</td>
+          <td>${o.numero_orden || ''}</td>
+          <td>${capitalizarTexto(o.tipo_servicio) || ''}</td>
+          <td>${capitalizarTexto(o.cliente_nombre) || 'Cliente'}</td>
+          <td>${formatearItems(o.items)}</td>
+          <td>$ ${Number(o.subtotal || 0).toLocaleString()}</td>
+          <td>${capitalizarTexto(o.estado_pago) || ''}</td>
+          <td>${capitalizarTexto(o.metodo_pago) || ''}</td>
+          <td>${capitalizarTexto(o.estado) || ''}</td>
+          <td>${o.creado_en ? o.creado_en.split('T')[0] : ''}</td>
+        </tr>
+      `;
+    });
+
+    contenidoTablaHtml += `
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `;
+
+    const blob = new Blob([contenidoTablaHtml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `reporte_ordenes_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute("download", `reporte_ordenes_${new Date().toISOString().split('T')[0]}.xls`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -757,7 +1073,6 @@ export default function DashboardGeneral() {
   const renderizarModulo = () => {
     switch (vistaActual) {
       case 'resumen': {
-        // Filtrar órdenes por el rango de fechas seleccionado (fechaInicio a fechaFin) en tiempo real
         const ordenesFiltradas = ordenes.filter(o => {
           if (!fechaInicio || !fechaFin) return true;
           const fechaCreacion = o.creado_en ? o.creado_en.split('T')[0] : '';
@@ -785,7 +1100,6 @@ export default function DashboardGeneral() {
 
         const totalClientesUnicos = new Set(ordenesFiltradas.map(o => o.cliente_nombre)).size;
 
-        // Cálculo del producto estrella en tiempo real basado en el rango de fechas filtrado
         const conteoProductos = {};
         ordenesFiltradas.forEach(o => {
           let items = o.items;
@@ -815,6 +1129,7 @@ export default function DashboardGeneral() {
           return est === 'pendiente' || est === 'en proceso';
         });
 
+        // Órdenes pendientes de cobro: Solo las que están por pagar y no son aprobadas ya por Wompi
         const ordenesPendientesCobro = ordenes.filter(o => {
           const estPag = o.estado_pago ? o.estado_pago.toLowerCase().trim() : '';
           return estPag !== 'pagado';
@@ -904,7 +1219,6 @@ export default function DashboardGeneral() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
-              {/* Sección con scroll interno */}
               <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 space-y-2 shadow-lg">
                 <div className="flex justify-between items-center pb-2 border-b border-neutral-800">
                   <div className="flex items-center gap-2">
@@ -930,7 +1244,6 @@ export default function DashboardGeneral() {
                 </div>
               </div>
 
-              {/* Sección con scroll interno */}
               <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 space-y-2 shadow-lg">
                 <div className="flex justify-between items-center pb-2 border-b border-neutral-800">
                   <div className="flex items-center gap-2">
@@ -1403,7 +1716,6 @@ export default function DashboardGeneral() {
               </div>
             )}
 
-            {/* Modal de Historial y Comportamiento del Cliente con scroll interno */}
             {modalHistorialAbierto && clienteSeleccionadoHistorial && (
               <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 overflow-y-auto">
                 <div className="bg-neutral-900 border border-neutral-800 rounded-2xl max-w-3xl w-full p-4 space-y-3 shadow-2xl my-auto max-h-[90vh] overflow-y-auto">
@@ -1501,22 +1813,186 @@ export default function DashboardGeneral() {
           <div className="space-y-3 max-w-full overflow-hidden">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2.5">
               <div>
-                <h2 className="text-base md:text-lg font-black text-white">Módulo de Domiciliarios</h2>
-                <p className="text-[11px] text-neutral-400 mt-0.5">Gestión y control de entregas, repartidores y asignación de despachos.</p>
+                <h2 className="text-base md:text-lg font-black text-white">Módulo de Domiciliarios & Seguridad (KDS Admin)</h2>
+                <p className="text-[11px] text-neutral-400 mt-0.5">Gestión de repartidores, control estricto de PINs de acceso, disponibilidad en vivo y productividad ($6.000 por envío independiente).</p>
               </div>
+              <button 
+                onClick={abrirModalCrearDomiciliario}
+                className="bg-amber-500 hover:bg-amber-400 text-neutral-950 font-black px-3 py-2 rounded-xl text-xs transition-all flex items-center gap-2 shadow-lg shadow-amber-500/25 cursor-pointer shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" /> Registrar Domiciliario
+              </button>
             </div>
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-12 text-center space-y-3 shadow-lg">
-              <div className="w-12 h-12 bg-neutral-950 rounded-2xl border border-neutral-800 flex items-center justify-center mx-auto text-amber-500">
-                <Truck className="w-6 h-6" />
+
+            {cargandoDomiciliarios ? (
+              <div className="py-20 text-center text-neutral-500 text-xs">Cargando domiciliarios de forma segura...</div>
+            ) : domiciliarios.length === 0 ? (
+              <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-8 text-center space-y-2 shadow-lg">
+                <div className="w-9 h-9 bg-neutral-950 rounded-xl border border-neutral-800 flex items-center justify-center mx-auto text-amber-500">
+                  <Truck className="w-4 h-4" />
+                </div>
+                <h3 className="text-xs font-bold text-white">No hay domiciliarios registrados</h3>
+                <p className="text-[11px] text-neutral-400 max-w-xs mx-auto">Registra al primer repartidor para habilitar el KDS automático y las asignaciones.</p>
               </div>
-              <h3 className="text-sm font-bold text-white">Módulo preparado y disponible</h3>
-              <p className="text-xs text-neutral-400 max-w-sm mx-auto">Este espacio se encuentra vacío temporalmente a la espera de configurar las funciones de despacho y domiciliarios.</p>
-            </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {domiciliarios.map(domi => {
+                  const ordenesDomi = ordenes.filter(o => o.domiciliario_id === domi.id);
+                  const entregasRealizadas = ordenesDomi.filter(o => o.estado_domicilio === 'entregado').length;
+                  const totalTarifaGenerada = entregasRealizadas * 6000;
+
+                  const estadoDomi = (domi.estado || 'fuera de turno').toLowerCase();
+                  let colorEstado = 'bg-neutral-500/10 text-neutral-400 border-neutral-500/20';
+                  if (estadoDomi === 'disponible') colorEstado = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+                  if (estadoDomi === 'en ruta') colorEstado = 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+
+                  return (
+                    <div key={domi.id} className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 flex flex-col justify-between gap-3 relative overflow-hidden shadow-lg">
+                      <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-amber-500 to-amber-600"></div>
+                      
+                      <div className="flex justify-between items-start gap-2">
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <h3 className="text-xs font-bold text-white">{capitalizarTexto(domi.nombre)}</h3>
+                            <span className="text-[10px] text-neutral-500 font-mono">#{domi.id}</span>
+                          </div>
+                          <p className="text-[11px] text-neutral-400 flex items-center gap-1 mt-0.5">
+                            <Phone className="w-3 h-3 text-neutral-500" /> {limpiarTelefono(domi.telefono)}
+                          </p>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border uppercase tracking-wider ${colorEstado}`}>
+                          {domi.estado}
+                        </span>
+                      </div>
+
+                      <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-2.5 space-y-1.5">
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-neutral-400">PIN KDS:</span>
+                          <span className="font-mono text-amber-400 font-bold bg-neutral-900 px-2 py-0.5 rounded border border-neutral-800 flex items-center gap-1">
+                            <Key className="w-3 h-3" /> {domi.pin_acceso}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-neutral-400">Entregas Realizadas:</span>
+                          <span className="font-bold text-white">{entregasRealizadas} pedidos</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-neutral-400">Tarifa Domicilios ($6k):</span>
+                          <span className="font-black text-emerald-400">$ {totalTarifaGenerada.toLocaleString()}</span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 pt-1 border-t border-neutral-800">
+                        <div className="flex items-center gap-1.5">
+                          <label className="text-[10px] font-bold text-neutral-400 shrink-0">Cambiar Estado:</label>
+                          <select 
+                            value={domi.estado || 'fuera de turno'}
+                            onChange={(e) => cambiarEstadoDomiciliarioAdmin(domi.id, e.target.value)}
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-2 py-1 text-[11px] text-white font-bold focus:outline-none focus:border-amber-500 cursor-pointer"
+                          >
+                            <option value="disponible">🟢 Disponible</option>
+                            <option value="en ruta">🛵 En Ruta</option>
+                            <option value="fuera de turno">🔴 Fuera de Turno</option>
+                          </select>
+                        </div>
+
+                        <div className="flex justify-end gap-1.5 pt-1">
+                          <button 
+                            onClick={() => abrirModalEditarDomiciliario(domi)} 
+                            className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1"
+                          >
+                            <Edit3 className="w-3 h-3 text-amber-400" /> Editar / PIN
+                          </button>
+                          <button 
+                            onClick={() => eliminarDomiciliario(domi.id)} 
+                            className="px-2.5 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1"
+                          >
+                            <Trash2 className="w-3 h-3" /> Inhabilitar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {modalDomiciliarioAbierto && (
+              <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+                <div className="bg-neutral-900 border border-neutral-800 rounded-2xl max-w-md w-full p-4 space-y-3 shadow-2xl relative">
+                  <div className="flex justify-between items-center pb-2 border-b border-neutral-800">
+                    <h3 className="text-xs font-black text-white flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-amber-500" />
+                      {modoEdicionDomiciliario ? 'Editar Repartidor y Credenciales' : 'Registrar Nuevo Domiciliario'}
+                    </h3>
+                    <button onClick={() => setModalDomiciliarioAbierto(false)} className="p-1 bg-neutral-950 rounded-lg text-neutral-400 hover:text-white cursor-pointer">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <form onSubmit={guardarDomiciliario} className="space-y-2.5">
+                    <div>
+                      <label className="text-[11px] font-semibold text-neutral-300 block mb-1">Nombre Completo *</label>
+                      <input 
+                        type="text" required placeholder="Ej. Carlos Pérez" 
+                        value={formNombreDomi} 
+                        onChange={(e) => setFormNombreDomi(e.target.value)}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-1.5 text-xs text-white font-bold focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-semibold text-neutral-300 block mb-1">Teléfono / WhatsApp *</label>
+                      <input 
+                        type="text" required placeholder="3001234567" 
+                        value={formTelefonoDomi} 
+                        onChange={(e) => setFormTelefonoDomi(e.target.value)}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-1.5 text-xs text-white font-bold focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-semibold text-neutral-300 block mb-1">PIN de Acceso KDS (Mínimo 4 dígitos) *</label>
+                      <input 
+                        type="text" required placeholder="Ej. 1234" maxLength="10"
+                        value={formPinDomi} 
+                        onChange={(e) => setFormPinDomi(e.target.value)}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-1.5 text-xs text-amber-400 font-mono font-bold focus:outline-none focus:border-amber-500"
+                      />
+                      <span className="text-[10px] text-neutral-500 mt-0.5 block">Este PIN lo usará el domiciliario para ingresar a su vista KDS independiente.</span>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-semibold text-neutral-300 block mb-1">Estado Operativo Inicial *</label>
+                      <select 
+                        value={formEstadoDomi}
+                        onChange={(e) => setFormEstadoDomi(e.target.value)}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-1.5 text-xs text-white font-bold focus:outline-none focus:border-amber-500 cursor-pointer"
+                      >
+                        <option value="disponible">🟢 Disponible</option>
+                        <option value="en ruta">🛵 En Ruta</option>
+                        <option value="fuera de turno">🔴 Fuera de Turno</option>
+                      </select>
+                    </div>
+
+                    <div className="pt-2 flex gap-2.5">
+                      <button type="button" onClick={() => setModalDomiciliarioAbierto(false)} className="w-1/2 bg-neutral-800 hover:bg-neutral-700 text-white font-bold py-2 rounded-xl text-xs cursor-pointer">
+                        Cancelar
+                      </button>
+                      <button type="submit" className="w-1/2 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-black py-2 rounded-xl text-xs shadow-lg shadow-amber-500/20 cursor-pointer">
+                        {modoEdicionDomiciliario ? 'Guardar Cambios' : 'Registrar Domi'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
           </div>
         );
       }
 
       case 'pagos': {
+        // FILTRO CLAVE: Solo mostrar órdenes pendientes que NO estén ya pagadas (Ej. Wompi APPROVED pasa directo y no se muestra aquí)
         const ordenesPendientesPago = ordenes.filter(o => {
           const estadoPago = o.estado_pago ? o.estado_pago.toLowerCase().trim() : '';
           return estadoPago !== 'pagado';
@@ -1536,7 +2012,7 @@ export default function DashboardGeneral() {
                   <CheckCircle className="w-4 h-4 text-emerald-400" />
                 </div>
                 <h3 className="text-xs font-bold text-white">¡Excelente! No hay pedidos pendientes de pago</h3>
-                <p className="text-[11px] text-neutral-400">Todas las órdenes registradas cuentan con su pago confirmado.</p>
+                <p className="text-[11px] text-neutral-400">Todas las órdenes registradas cuentan con su pago confirmado o aprobado.</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
@@ -1563,15 +2039,14 @@ export default function DashboardGeneral() {
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className="text-[10px] font-bold text-neutral-400 block mb-0.5">Método de Pago:</label>
+                            {/* SIMPLIFICADO: Únicamente Efectivo y Transferencia (Se eliminó Nequi y Daviplara manuales) */}
                             <select 
                               value={o.metodo_pago || 'Efectivo'}
                               onChange={(e) => registrarPagoOrden(o.id, o.estado_pago || 'Por Pagar', e.target.value)}
                               className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-2 py-1 text-[11px] text-white font-bold focus:outline-none focus:border-amber-500 cursor-pointer"
                             >
                               <option value="Efectivo">Efectivo</option>
-                              <option value="Nequi">Nequi</option>
-                              <option value="Daviplata">Daviplata</option>
-                              <option value="Tarjeta">Tarjeta</option>
+                              <option value="Transferencia">Transferencia</option>
                             </select>
                           </div>
                           <div>
@@ -1949,23 +2424,12 @@ export default function DashboardGeneral() {
           setFechaFin(hoyStr);
         };
 
-        const cerrarCajaHoy = () => {
-          const hoyStr = new Date().toISOString().split('T')[0];
-          const ventasHoy = ordenes.filter(o => {
-            const fCreacion = o.creado_en ? o.creado_en.split('T')[0] : '';
-            return fCreacion === hoyStr && o.estado_pago === 'Pagado';
-          }).reduce((acc, curr) => acc + Number(curr.subtotal || 0), 0);
-
-          setEstadoCajaCerrada(true);
-          alert(`¡Caja de hoy (${hoyStr}) cerrada con éxito!\nTotal recaudado: $ ${ventasHoy.toLocaleString()}`);
-        };
-
         return (
           <div className="space-y-3 max-w-full overflow-hidden">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2.5">
               <div>
                 <h2 className="text-base md:text-lg font-black text-white">Contabilidad y Reportes Financieros</h2>
-                <p className="text-[11px] text-neutral-400 mt-0.5">Cierre de caja, auditoría por fechas y exportación a CSV.</p>
+                <p className="text-[11px] text-neutral-400 mt-0.5">Cierre de caja, auditoría por fechas, gestión de códigos dinámicos y exportación a CSV.</p>
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={filtrarHoyContabilidad} className="bg-neutral-900 border border-neutral-800 hover:border-amber-500 text-amber-400 font-bold px-3 py-2 rounded-xl text-xs transition-all cursor-pointer shadow-md">
@@ -1975,6 +2439,61 @@ export default function DashboardGeneral() {
                   <Download className="w-3.5 h-3.5" /> Exportar Reporte CSV / Excel
                 </button>
               </div>
+            </div>
+
+            {/* TARJETA DE GESTIÓN DE SEGURIDAD Y CÓDIGOS (ADMIN) */}
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 space-y-3 shadow-lg">
+              <div className="flex justify-between items-center pb-2 border-b border-neutral-800">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-amber-500" />
+                  <h3 className="text-xs font-black text-white uppercase tracking-wider">Gestión de PIN de Cierre Diario (Admin)</h3>
+                </div>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${codigoUsadoHoy ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                  {codigoUsadoHoy ? '🔴 Código ya utilizado hoy' : '🟢 Código Activo'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-3 flex justify-between items-center">
+                  <div>
+                    <span className="text-[10px] text-neutral-400 font-bold uppercase block">Código Vigente para Hoy:</span>
+                    <p className="text-xl font-mono font-black text-amber-400 tracking-widest mt-0.5">{codigoActivoHoy}</p>
+                  </div>
+                  <button 
+                    onClick={() => rotarCodigoDelDia()} 
+                    className="px-3 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 rounded-xl text-xs font-bold text-white transition-all cursor-pointer flex items-center gap-1.5"
+                    title="Generar Código Aleatorio Nuevo"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 text-amber-500" /> Generar Nuevo
+                  </button>
+                </div>
+
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    maxLength="6"
+                    placeholder="PIN Personalizado..."
+                    value={nuevoCodigoInput}
+                    onChange={(e) => setNuevoCodigoInput(e.target.value)}
+                    className="flex-1 bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white font-mono font-bold focus:outline-none focus:border-amber-500"
+                  />
+                  <button 
+                    onClick={() => {
+                      if (!nuevoCodigoInput || nuevoCodigoInput.length < 4) {
+                        alert('Ingresa al menos 4 dígitos para el PIN.');
+                        return;
+                      }
+                      rotarCodigoDelDia(nuevoCodigoInput.trim());
+                    }}
+                    className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-black rounded-xl text-xs transition-all cursor-pointer shadow-md shadow-amber-500/20 whitespace-nowrap"
+                  >
+                    Establecer PIN
+                  </button>
+                </div>
+              </div>
+              <p className="text-[10px] text-neutral-500">
+                💡 Si el cajero te reporta alguna novedad o sospechas que el PIN se filtró, haz clic en "Generar Nuevo" para quemar el código anterior al instante[cite: 10].
+              </p>
             </div>
 
             <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 flex flex-col sm:flex-row items-center justify-between gap-2.5 shadow-lg">
@@ -2010,17 +2529,20 @@ export default function DashboardGeneral() {
                 <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Total Pedidos Periodo</span>
                 <p className="text-base font-black text-amber-400 mt-1">{totalOrdenesPeriodo}</p>
               </div>
-              <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 relative overflow-hidden shadow-lg">
+              <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 relative overflow-hidden shadow-lg flex flex-col justify-between">
                 <div className="absolute top-0 inset-x-0 h-1 bg-emerald-500"></div>
-                <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Estado de Caja Hoy</span>
-                <p className={`text-base font-black mt-1 ${estadoCajaCerrada ? 'text-emerald-400' : 'text-amber-400'}`}>
-                  {estadoCajaCerrada ? 'Cerrada' : 'Abierta'}
-                </p>
+                <div>
+                  <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Estado de Caja Hoy</span>
+                  <p className={`text-base font-black mt-1 ${estadoCajaCerrada ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {estadoCajaCerrada ? '🔒 Caja Cerrada' : '🔓 Caja Abierta'}
+                  </p>
+                </div>
                 <button 
-                  onClick={cerrarCajaHoy}
+                  onClick={() => { setErrorPin(''); setPinCierre(''); setModalPinAbierto(true); }}
                   disabled={estadoCajaCerrada}
-                  className="mt-2 w-full py-1 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-black rounded-lg text-[10px] transition-all cursor-pointer disabled:opacity-50"
+                  className="mt-2 w-full py-2 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-black rounded-xl text-xs transition-all cursor-pointer disabled:opacity-50 shadow-lg shadow-amber-500/20 flex items-center justify-center gap-1.5"
                 >
+                  <Key className="w-3.5 h-3.5" />
                   {estadoCajaCerrada ? 'Caja Cerrada Hoy' : 'Cerrar Caja de Hoy'}
                 </button>
               </div>
@@ -2059,6 +2581,69 @@ export default function DashboardGeneral() {
                 </table>
               </div>
             </div>
+
+            {/* MODAL SEGURO DE AUTORIZACIÓN POR PIN DINÁMICO */}
+            {modalPinAbierto && (
+              <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+                <div className="bg-neutral-900 border border-neutral-800 rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl relative">
+                  <div className="flex justify-between items-center pb-2 border-b border-neutral-800">
+                    <h3 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-amber-500" />
+                      Autorización de Cierre de Caja
+                    </h3>
+                    <button onClick={() => setModalPinAbierto(false)} className="p-1 bg-neutral-950 rounded-lg text-neutral-400 hover:text-white cursor-pointer">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <p className="text-xs text-neutral-300 text-center">
+                    Solicita al administrador el código diario vigente para confirmar el cierre y quemarlo al instante[cite: 10].
+                  </p>
+
+                  <form onSubmit={confirmarCierreConPin} className="space-y-3">
+                    <div>
+                      <label className="text-[11px] font-bold text-neutral-400 block mb-1 text-center">Código Diario (Admin)</label>
+                      <input 
+                        type="password"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        maxLength="8"
+                        required
+                        placeholder="••••"
+                        value={pinCierre}
+                        onChange={(e) => setPinCierre(e.target.value)}
+                        className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-3 py-2.5 text-center text-lg font-mono font-black text-amber-400 tracking-widest focus:outline-none focus:border-amber-500"
+                        autoFocus
+                      />
+                    </div>
+
+                    {errorPin && (
+                      <div className="p-2.5 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-2 text-xs text-red-400">
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        <span>{errorPin}</span>
+                      </div>
+                    )}
+
+                    <div className="pt-2 flex gap-2">
+                      <button 
+                        type="button" 
+                        onClick={() => setModalPinAbierto(false)} 
+                        className="w-1/2 bg-neutral-800 hover:bg-neutral-700 text-white font-bold py-2.5 rounded-xl text-xs cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                      <button 
+                        type="submit" 
+                        disabled={validandoPin}
+                        className="w-1/2 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-black py-2.5 rounded-xl text-xs shadow-lg shadow-amber-500/20 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1"
+                      >
+                        {validandoPin ? 'Validando...' : 'Confirmar Cierre'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
           </div>
         );
       }
@@ -2333,4 +2918,4 @@ export default function DashboardGeneral() {
       </div>
     </div>
   );
-}
+} 

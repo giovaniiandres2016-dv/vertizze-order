@@ -1,5 +1,5 @@
 // ============================================================================
-// ARCHIVO: src/App.jsx (Enrutamiento por URL nativo para producción)
+// ARCHIVO: src/App.jsx (Corregido y Unificado)
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
@@ -7,8 +7,10 @@ import React, { useState, useEffect } from 'react';
 // Vistas del Administrador y Personal (Privadas)
 import Login from './vistas/admin/Login';
 import DashboardGeneral from './vistas/admin/DashboardGeneral';
-import PantallaAdminOrdenes from './vistas/admin/PantallaAdminOrdenes';
 import PantallaCocina from './vistas/admin/PantallaCocina';
+
+// Vista de Domiciliarios
+import VistaDomiciliario from './vistas/domiciliario/VistaDomiciliario';
 
 // Vistas del Cliente (Públicas)
 import PantallaInicio from './vistas/cliente/PantallaInicio';
@@ -17,22 +19,20 @@ import PantallaCarrito from './vistas/cliente/PantallaCarrito';
 import PantallaCheckout from './vistas/cliente/PantallaCheckout';
 import PantallaExito from './vistas/cliente/PantallaExito';
 
+// CORRECCIÓN: Ruta de importación desde src/ hacia src/sdk/
 import { crearOrden } from './sdk/vertizzeApi';
 
 export default function App() {
   const [rutaActual, setRutaActual] = useState(window.location.pathname);
   
-  // Control de vistas del flujo del cliente
   const [modoPedido, setModoPedido] = useState(null);
-  const [pasoCliente, setPasoCliente] = useState('inicio'); // 'inicio', 'menu', 'carrito', 'checkout', 'exito'
+  const [pasoCliente, setPasoCliente] = useState('inicio'); 
   const [carrito, setCarrito] = useState([]);
   const [datosUltimaOrden, setDatosUltimaOrden] = useState(null);
 
-  // Control de autenticación para administración
-  const [rolActual, setRolActual] = useState(null); // null o 'admin'
+  const [rolActual, setRolActual] = useState(null); 
 
   useEffect(() => {
-    // Sintonizar cambios en la URL
     const manejarCambioRuta = () => setRutaActual(window.location.pathname);
     window.addEventListener('popstate', manejarCambioRuta);
 
@@ -93,9 +93,7 @@ export default function App() {
     setPasoCliente('inicio');
   };
 
-  // =========================================================================
-  // RUTA 1: /cocina (Pantalla exclusiva para el KDS de cocina)
-  // =========================================================================
+  // RUTA: /cocina
   if (rutaActual.includes('/cocina')) {
     return (
       <div className="relative min-h-screen bg-neutral-950 text-white">
@@ -111,14 +109,17 @@ export default function App() {
     );
   }
 
-  // =========================================================================
-  // RUTA 2: /admin (Panel de administración general y caja)
-  // =========================================================================
+  // RUTA: /domiciliario
+  if (rutaActual.includes('/domiciliario')) {
+    return <VistaDomiciliario />;
+  }
+
+  // RUTA: /admin
   if (rutaActual.includes('/admin')) {
     if (!rolActual) {
       return (
         <Login 
-          alIniciarSesion={(rol) => {
+          alIniciarSesion={() => {
             setRolActual('admin');
           }} 
         />
@@ -150,9 +151,7 @@ export default function App() {
     );
   }
 
-  // =========================================================================
-  // RUTA 3: Raíz / Cliente (Kiosco de Autoservicio Fijo)
-  // =========================================================================
+  // RUTA: Raíz / Cliente
   return (
     <div className="relative min-h-screen bg-neutral-950 text-white">
       {pasoCliente === 'inicio' && (
@@ -191,32 +190,11 @@ export default function App() {
           carrito={carrito}
           modoPedido={modoPedido}
           alVolverAlCarrito={() => setPasoCliente('carrito')}
-          alConfirmarPedido={async (datosOrden) => {
-            try {
-              const ordenParaGuardar = {
-                numero_orden: Math.floor(1000 + Math.random() * 9000),
-                cliente_nombre: datosOrden.cliente_nombre,
-                telefono: datosOrden.telefono,
-                ubicacion_detalle: datosOrden.ubicacion_detalle,
-                tipo_servicio: datosOrden.tipo_servicio,
-                metodo_pago: datosOrden.metodo_pago,
-                observaciones: datosOrden.observaciones,
-                items: datosOrden.items,
-                subtotal: datosOrden.subtotal,
-                domicilio: datosOrden.domicilio,
-                total: datosOrden.total,
-                estado: 'Pendiente'
-              };
-
-              const ordenRegistrada = await crearOrden(ordenParaGuardar);
-              const ordenFinal = ordenRegistrada && ordenRegistrada[0] ? ordenRegistrada[0] : { ...ordenParaGuardar };
-              setDatosUltimaOrden(ordenFinal);
-              setCarrito([]);
-              setPasoCliente('exito');
-            } catch (error) {
-              console.error("Error al guardar la orden:", error);
-              alert("Hubo un error al registrar tu pedido.");
-            }
+          alConfirmarPedido={(ordenCreada) => {
+            // Recibe la orden ya creada directamente desde PantallaCheckout sin duplicar inserciones
+            setDatosUltimaOrden(ordenCreada);
+            setCarrito([]);
+            setPasoCliente('exito');
           }}
         />
       )}
